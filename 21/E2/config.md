@@ -1,0 +1,27 @@
+```
+base_config = dict(
+    train_features=DEFAULT_TRAIN_FEATURES,
+    train_labels=DEFAULT_TRAIN_LABELS,
+    val_features=None,
+    val_labels=None,
+    test_features=DEFAULT_TEST_FEATURES,
+    test_labels=DEFAULT_TEST_LABELS,
+    batch_size=32,
+    epochs=50,
+    lr=1e-4,
+    weight_decay=1e-5,
+    hidden_dims=[1024, 512, 256],
+    dropout=0.3,
+    activation="gelu",
+    threshold=0.5,
+    top_k=5,
+    val_ratio=0.2,
+    random_seed=42,
+    num_workers=0,
+    device="cuda",
+    standardize=False,
+    scaler_path=None,
+    selection_metric="mAP",
+    save_name="pure_mlp_best.pt",
+)
+```

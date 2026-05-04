@@ -1,0 +1,148 @@
+\documentclass{article}
+
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage{hyperref}
+
+\geometry{a4paper, margin=2.5cm}
+
+\title{E2 MLP Experimental Results and Analysis}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Experimental Setup}
+
+This experiment is based on the MLP multi-label classification task under the
+\texttt{21/E2} directory. Three loss functions are compared:
+\texttt{BCEWithLogitsLoss}, Focal Loss, and Asymmetric Loss (ASL).
+The corresponding experiment folders are
+\texttt{mlp\_runs\_bce},
+\texttt{mlp\_runs\_focal\_g2\_a025}, and
+\texttt{mlp\_runs\_asl\_gn4\_gp1\_c005}.
+The analysis mainly uses the final test results from each \texttt{test\_metrics.json} file.
+
+The input representation is formed by concatenating six extracted feature groups:
+\texttt{Normalized\_CORR},
+\texttt{Normalized\_WT},
+\texttt{Normalized\_CH},
+\texttt{Normalized\_EDH},
+\texttt{Normalized\_CM55}, and
+\texttt{BoW\_int}.
+The training labels are loaded from \texttt{dataset/database\_labels.npy}, and the test
+labels are loaded from \texttt{dataset/test\_labels.npy}.
+
+All three runs share the same MLP architecture and training configuration:
+
+\begin{itemize}
+    \item MLP hidden dimensions: \([1024, 512, 256]\)
+    \item Activation: GELU
+    \item Dropout: 0.3
+    \item Batch size: 32
+    \item Epochs: 50
+    \item Learning rate: \(1 \times 10^{-4}\)
+    \item Weight decay: \(1 \times 10^{-5}\)
+    \item Validation ratio: 0.2
+    \item Random seed: 42
+    \item Prediction threshold: 0.5
+    \item Top-\(k\): 5
+    \item Model selection metric: validation mAP
+    \item Standardization: disabled
+\end{itemize}
+
+Therefore, this experiment mainly evaluates the effect of different loss functions
+under the same MLP configuration.
+
+\section{Test Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Test performance comparison of three loss functions in E2}
+\label{tab:e2_loss_comparison_en}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Loss & Test Loss & Accuracy & Micro-F1 & Macro-F1 & mAP & Example-F1 & Jaccard & P@5 \\
+\midrule
+BCE
+& 0.2495 & 13.38 & 62.60 & 48.18 & 64.48 & 54.51 & 44.95 & 50.68 \\
+Focal
+& 0.0254 & 8.19 & 47.17 & 28.80 & 64.66 & 37.12 & 29.60 & 50.69 \\
+ASL
+& 0.0460 & 10.52 & 65.91 & 59.83 & 64.83 & 62.84 & 50.76 & 50.85 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Recall@5 comparison}
+\label{tab:e2_recall_at_5_en}
+\begin{tabular}{lr}
+\toprule
+Loss & Recall@5 \\
+\midrule
+BCE & 78.86 \\
+Focal & 78.90 \\
+ASL & 78.89 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Accuracy, F1 scores, mAP, Example-F1, Jaccard, P@5, and Recall@5 are reported as
+percentages. Test Loss is kept in its original scale. Since BCE, Focal Loss, and
+ASL define and scale their objectives differently, their loss values should not be
+directly compared across methods.
+
+\section{Analysis}
+
+In terms of mAP, the three loss functions show only small differences.
+ASL achieves the highest mAP at 64.83\%, followed by Focal Loss at 64.66\% and BCE
+at 64.48\%. This suggests that all three methods have similar ranking ability for
+relevant labels.
+
+However, ASL shows a much clearer advantage after converting probabilities into
+binary predictions with the fixed threshold of 0.5. ASL obtains the best Micro-F1,
+Macro-F1, Example-F1, and Jaccard scores. Its Micro-F1 reaches 65.91\%, Macro-F1
+reaches 59.83\%, Example-F1 reaches 62.84\%, and Jaccard reaches 50.76\%.
+These results indicate that ASL produces a better balance between positive and
+negative label predictions under the fixed-threshold setting.
+
+BCE is a stable baseline. It reaches 62.60\% Micro-F1, 48.18\% Macro-F1, and
+54.51\% Example-F1. However, compared with ASL, BCE is much weaker in Macro-F1,
+which suggests that it is less effective for minority or difficult labels. In
+multi-label classification, label imbalance is common, and BCE may be dominated by
+frequent negative labels because it treats all labels with the same binary
+classification objective.
+
+Focal Loss shows a different behavior. Its mAP and P@5 are very close to the other
+two methods, and its mAP is slightly higher than BCE. Nevertheless, its Micro-F1,
+Macro-F1, Example-F1, and Jaccard are much lower. This means that Focal Loss does
+not significantly damage label ranking, but its output scores may be less well
+calibrated for the fixed threshold of 0.5. If Focal Loss is further studied,
+threshold tuning or class-wise threshold search should be considered.
+
+Recall@5 is almost identical across the three methods, around 78.9\%. This further
+shows that the main performance difference does not come from top-\(k\) ranking,
+but from the final binary label decision.
+
+\section{Conclusion}
+
+Overall, ASL is the best loss function in this E2 experiment. Although its mAP is
+only about 0.35 percentage points higher than BCE, it brings much larger
+improvements in F1-based metrics: approximately 3.31 percentage points in
+Micro-F1, 11.65 percentage points in Macro-F1, and 8.33 percentage points in
+Example-F1. This indicates that ASL is more suitable for the current multi-label
+classification task, especially under label imbalance and fixed-threshold
+prediction.
+
+BCE should be kept as a reliable baseline for future comparisons. Focal Loss is
+not recommended as the final choice under the current configuration, because it
+preserves similar mAP and top-\(k\) performance but performs poorly after
+thresholding. Future work on Focal Loss should focus on threshold tuning, different
+\(\gamma\) and \(\alpha\) settings, and validation-based class-wise threshold search.
+
+\end{document}
