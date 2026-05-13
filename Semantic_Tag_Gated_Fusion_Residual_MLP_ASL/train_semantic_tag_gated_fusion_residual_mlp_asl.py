@@ -14,46 +14,46 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 
 
-TRAIN_FEATURE_PATHS = [
-    Path("Extracted_Features/BoW_int.npy"),
+VISUAL_TRAIN_FEATURE_PATHS = [
     Path("Extracted_Features/Normalized_CH.npy"),
     Path("Extracted_Features/Normalized_CM55.npy"),
     Path("Extracted_Features/Normalized_CORR.npy"),
     Path("Extracted_Features/Normalized_EDH.npy"),
     Path("Extracted_Features/Normalized_WT.npy"),
 ]
-TEST_FEATURE_PATHS = [
-    Path("Extracted_Features_Test/BoW_int.npy"),
+VISUAL_TEST_FEATURE_PATHS = [
     Path("Extracted_Features_Test/Normalized_CH.npy"),
     Path("Extracted_Features_Test/Normalized_CM55.npy"),
     Path("Extracted_Features_Test/Normalized_CORR.npy"),
     Path("Extracted_Features_Test/Normalized_EDH.npy"),
     Path("Extracted_Features_Test/Normalized_WT.npy"),
 ]
+VISUAL_GROUP_NAMES = ["ch", "cm55", "corr", "edh", "wt"]
 
 
 @dataclass
 class TrainConfig:
     batch_size: int = 128
     epochs: int = 50
-    lr: float = 1e-4
+    lr: float = 1e-3
     weight_decay: float = 1e-4
-    group_embed_dim: int = 128
     hidden_dim: int = 512
     num_blocks: int = 4
     dropout: float = 0.3
-    val_ratio: float = 0.2
+    val_ratio: float = 0.1
     threshold: float = 0.5
     random_seed: int = 42
     asl_gamma_neg: float = 4.0
     asl_gamma_pos: float = 1.0
     asl_clip: float = 0.05
+    max_train_samples: int | None = None
+    max_test_samples: int | None = None
 
 
 class FeatureGroupDataset(Dataset):
     def __init__(self, feature_groups: list[np.ndarray], labels: np.ndarray):
-        self.feature_groups = [torch.tensor(features, dtype=torch.float32) for features in feature_groups]
-        self.labels = torch.tensor(labels, dtype=torch.float32)
+        self.feature_groups = [torch.from_numpy(np.ascontiguousarray(features, dtype=np.float32)) for features in feature_groups]
+        self.labels = torch.from_numpy(np.ascontiguousarray(labels, dtype=np.float32))
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -78,35 +78,44 @@ class ResidualMLPBlock(nn.Module):
         return x + self.block(x)
 
 
-class GatedFusionResidualMLP(nn.Module):
+class SemanticTagGatedFusionResidualMLP(nn.Module):
     def __init__(
         self,
         group_dims: list[int],
+        group_names: list[str],
         num_classes: int,
-        group_embed_dim: int = 128,
         hidden_dim: int = 512,
         num_blocks: int = 4,
         dropout: float = 0.3,
     ):
         super().__init__()
+        if len(group_dims) != len(group_names):
+            raise ValueError("group_dims and group_names must have the same length")
+
+        self.group_names = group_names
+        self.group_embed_dims = [
+            infer_group_embed_dim(group_dim)
+            for group_dim in group_dims
+        ]
         self.group_encoders = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(group_dim, group_embed_dim),
-                    nn.LayerNorm(group_embed_dim),
+                    nn.Linear(group_dim, embed_dim),
+                    nn.LayerNorm(embed_dim),
                     nn.GELU(),
                     nn.Dropout(dropout),
                 )
-                for group_dim in group_dims
+                for group_dim, embed_dim in zip(group_dims, self.group_embed_dims)
             ]
         )
+
+        fused_dim = sum(self.group_embed_dims)
         self.gate = nn.Sequential(
-            nn.Linear(group_embed_dim * len(group_dims), hidden_dim),
+            nn.Linear(fused_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, len(group_dims)),
         )
-        fused_dim = group_embed_dim * len(group_dims)
         self.input_proj = nn.Sequential(
             nn.Linear(fused_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -123,11 +132,13 @@ class GatedFusionResidualMLP(nn.Module):
 
     def forward(self, feature_groups: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         encoded_groups = [encoder(features) for encoder, features in zip(self.group_encoders, feature_groups)]
-        stacked = torch.stack(encoded_groups, dim=1)
         concat = torch.cat(encoded_groups, dim=1)
         gate_weights = torch.softmax(self.gate(concat), dim=1)
-        gated = stacked * gate_weights.unsqueeze(-1)
-        fused = gated.flatten(start_dim=1)
+        gated_groups = [
+            encoded * gate_weights[:, idx : idx + 1]
+            for idx, encoded in enumerate(encoded_groups)
+        ]
+        fused = torch.cat(gated_groups, dim=1)
         hidden = self.input_proj(fused)
         hidden = self.blocks(hidden)
         logits = self.classifier(hidden)
@@ -178,18 +189,62 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
+def infer_group_embed_dim(group_dim: int) -> int:
+    if group_dim >= 1000:
+        return 512
+    if group_dim >= 200:
+        return 256
+    return 128
+
+
 def load_array(path: Path) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"Missing file: {path.resolve()}")
-    return np.load(path).astype(np.float32)
+    if path.suffix == ".npy":
+        return np.load(path).astype(np.float32)
+    return np.loadtxt(path).astype(np.float32)
 
 
-def load_feature_groups(data_root: Path, paths: list[Path]) -> list[np.ndarray]:
+def trim_to_match(features: np.ndarray, labels: np.ndarray, name: str) -> tuple[np.ndarray, np.ndarray]:
+    if features.shape[0] == labels.shape[0]:
+        return features, labels
+    n_rows = min(features.shape[0], labels.shape[0])
+    print(f"Warning: trimming {name} rows to {n_rows} ({features.shape[0]} features, {labels.shape[0]} labels).")
+    return features[:n_rows], labels[:n_rows]
+
+
+def validate_args(config: TrainConfig) -> None:
+    if config.epochs < 1:
+        raise ValueError("--epochs must be at least 1 so a checkpoint can be selected.")
+    if config.batch_size < 1:
+        raise ValueError("--batch-size must be at least 1.")
+    if not 0.0 < config.val_ratio < 1.0:
+        raise ValueError("--val-ratio must be between 0 and 1.")
+    if config.max_train_samples is not None and config.max_train_samples < 2:
+        raise ValueError("--max-train-samples must be at least 2 when provided.")
+    if config.max_test_samples is not None and config.max_test_samples < 1:
+        raise ValueError("--max-test-samples must be at least 1 when provided.")
+
+
+def load_feature_groups(
+    data_root: Path,
+    paths: list[Path],
+    tag_path: Path,
+) -> tuple[list[np.ndarray], list[str]]:
     arrays = [load_array(data_root / path) for path in paths]
+    tag_features = load_array(tag_path if tag_path.is_absolute() else data_root / tag_path)
+    arrays.append(tag_features)
+    group_names = [*VISUAL_GROUP_NAMES, "semantic_tag"]
+
     n_rows = {array.shape[0] for array in arrays}
     if len(n_rows) != 1:
-        raise ValueError(f"Feature row counts do not match: {sorted(n_rows)}")
-    return arrays
+        min_rows = min(n_rows)
+        print(
+            "Warning: feature row counts do not match "
+            f"{sorted(n_rows)}; trimming all groups to {min_rows} rows by prefix."
+        )
+        arrays = [array[:min_rows] for array in arrays]
+    return arrays, group_names
 
 
 def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[np.ndarray]:
@@ -197,10 +252,11 @@ def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[n
 
 
 def evaluate(
-    model: GatedFusionResidualMLP,
+    model: SemanticTagGatedFusionResidualMLP,
     loader: DataLoader,
     device: torch.device,
     threshold: float,
+    group_names: list[str],
 ) -> dict[str, float]:
     model.eval()
     all_targets, all_probs, all_preds, all_gates = [], [], [], []
@@ -229,13 +285,13 @@ def evaluate(
         "micro_f1": float(f1_score(targets, preds, average="micro", zero_division=0)),
         "macro_f1": float(f1_score(targets, preds, average="macro", zero_division=0)),
     }
-    for idx, weight in enumerate(gates.mean(axis=0)):
-        metrics[f"gate_{idx}_mean"] = float(weight)
+    for name, weight in zip(group_names, gates.mean(axis=0)):
+        metrics[f"gate_{name}_mean"] = float(weight)
     return metrics
 
 
 def train_one_epoch(
-    model: GatedFusionResidualMLP,
+    model: SemanticTagGatedFusionResidualMLP,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
@@ -264,35 +320,30 @@ def save_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def print_run_settings(args: argparse.Namespace, config: TrainConfig) -> None:
-    print("\nRun settings:")
-    print(json.dumps(asdict(config), indent=2))
-    print(f"data_root: {args.data_root}")
-    print(f"output_dir: {args.output_dir}")
-    print(f"num_workers: {args.num_workers}")
-    print()
-
-
 def main() -> None:
-    defaults = TrainConfig()
-    parser = argparse.ArgumentParser(description="Train a Gated Fusion Residual MLP with ASL on feature groups.")
+    parser = argparse.ArgumentParser(
+        description="Train Residual MLP + ASL + Semantic Tag Modality + Gated Fusion."
+    )
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
-    parser.add_argument("--output-dir", type=Path, default=Path("Gated_Fusion_Residual_MLP_ASL/runs"))
-    parser.add_argument("--epochs", type=int, default=defaults.epochs)
-    parser.add_argument("--batch-size", type=int, default=defaults.batch_size)
-    parser.add_argument("--lr", type=float, default=defaults.lr)
-    parser.add_argument("--weight-decay", type=float, default=defaults.weight_decay)
-    parser.add_argument("--group-embed-dim", type=int, default=defaults.group_embed_dim)
-    parser.add_argument("--hidden-dim", type=int, default=defaults.hidden_dim)
-    parser.add_argument("--num-blocks", type=int, default=defaults.num_blocks)
-    parser.add_argument("--dropout", type=float, default=defaults.dropout)
-    parser.add_argument("--threshold", type=float, default=defaults.threshold)
-    parser.add_argument("--val-ratio", type=float, default=defaults.val_ratio)
-    parser.add_argument("--seed", type=int, default=defaults.random_seed)
+    parser.add_argument("--output-dir", type=Path, default=Path("Semantic_Tag_Gated_Fusion_Residual_MLP_ASL/runs"))
+    parser.add_argument("--train-tag-path", type=Path, default=Path("NUS_WID_Tags/Train_Tags1k.dat"))
+    parser.add_argument("--test-tag-path", type=Path, default=Path("NUS_WID_Tags/Test_Tags1k.dat"))
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--hidden-dim", type=int, default=512)
+    parser.add_argument("--num-blocks", type=int, default=4)
+    parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--val-ratio", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--asl-gamma-neg", type=float, default=defaults.asl_gamma_neg)
-    parser.add_argument("--asl-gamma-pos", type=float, default=defaults.asl_gamma_pos)
-    parser.add_argument("--asl-clip", type=float, default=defaults.asl_clip)
+    parser.add_argument("--asl-gamma-neg", type=float, default=4.0)
+    parser.add_argument("--asl-gamma-pos", type=float, default=1.0)
+    parser.add_argument("--asl-clip", type=float, default=0.05)
+    parser.add_argument("--max-train-samples", type=int, default=None, help="Optional cap for quick smoke tests.")
+    parser.add_argument("--max-test-samples", type=int, default=None, help="Optional cap for quick smoke tests.")
     args = parser.parse_args()
 
     config = TrainConfig(
@@ -300,7 +351,6 @@ def main() -> None:
         epochs=args.epochs,
         lr=args.lr,
         weight_decay=args.weight_decay,
-        group_embed_dim=args.group_embed_dim,
         hidden_dim=args.hidden_dim,
         num_blocks=args.num_blocks,
         dropout=args.dropout,
@@ -310,23 +360,45 @@ def main() -> None:
         asl_gamma_neg=args.asl_gamma_neg,
         asl_gamma_pos=args.asl_gamma_pos,
         asl_clip=args.asl_clip,
+        max_train_samples=args.max_train_samples,
+        max_test_samples=args.max_test_samples,
     )
+    validate_args(config)
     set_seed(config.random_seed)
     device = get_device()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    print_run_settings(args, config)
     print(f"Using device: {device}")
-    print("Loading feature groups...")
-    feature_groups = load_feature_groups(args.data_root, TRAIN_FEATURE_PATHS)
+    print("Loading visual feature groups plus semantic tag modality...")
+    feature_groups, group_names = load_feature_groups(
+        args.data_root,
+        VISUAL_TRAIN_FEATURE_PATHS,
+        args.train_tag_path,
+    )
+    test_feature_groups, test_group_names = load_feature_groups(
+        args.data_root,
+        VISUAL_TEST_FEATURE_PATHS,
+        args.test_tag_path,
+    )
+    if group_names != test_group_names:
+        raise ValueError(f"Train/test group names differ: {group_names} vs {test_group_names}")
+
     y_all = load_array(args.data_root / "database_labels_81_big.npy")
-    test_feature_groups = load_feature_groups(args.data_root, TEST_FEATURE_PATHS)
     y_test = load_array(args.data_root / "database_labels_81_test.npy")
 
-    if feature_groups[0].shape[0] != y_all.shape[0]:
-        raise ValueError(f"Train features/labels mismatch: {feature_groups[0].shape[0]} vs {y_all.shape[0]}")
-    if test_feature_groups[0].shape[0] != y_test.shape[0]:
-        raise ValueError(f"Test features/labels mismatch: {test_feature_groups[0].shape[0]} vs {y_test.shape[0]}")
+    feature_groups = [features for features in feature_groups]
+    test_feature_groups = [features for features in test_feature_groups]
+    feature_groups[0], y_all = trim_to_match(feature_groups[0], y_all, "train labels")
+    feature_groups = [features[: len(y_all)] for features in feature_groups]
+    test_feature_groups[0], y_test = trim_to_match(test_feature_groups[0], y_test, "test labels")
+    test_feature_groups = [features[: len(y_test)] for features in test_feature_groups]
+
+    if config.max_train_samples is not None:
+        y_all = y_all[: config.max_train_samples]
+        feature_groups = [features[: config.max_train_samples] for features in feature_groups]
+    if config.max_test_samples is not None:
+        y_test = y_test[: config.max_test_samples]
+        test_feature_groups = [features[: config.max_test_samples] for features in test_feature_groups]
 
     idx_train, idx_val = train_test_split(
         np.arange(len(y_all)),
@@ -358,10 +430,10 @@ def main() -> None:
     )
 
     group_dims = [features.shape[1] for features in feature_groups]
-    model = GatedFusionResidualMLP(
+    model = SemanticTagGatedFusionResidualMLP(
         group_dims=group_dims,
+        group_names=group_names,
         num_classes=y_all.shape[1],
-        group_embed_dim=config.group_embed_dim,
         hidden_dim=config.hidden_dim,
         num_blocks=config.num_blocks,
         dropout=config.dropout,
@@ -375,12 +447,12 @@ def main() -> None:
 
     best_map = -1.0
     history: list[dict[str, float]] = []
-    checkpoint_path = args.output_dir / "gated_fusion_residual_mlp_asl_best.pt"
+    checkpoint_path = args.output_dir / "semantic_tag_gated_fusion_residual_mlp_asl_best.pt"
 
     print(f"Train samples: {len(idx_train)} | Val samples: {len(idx_val)} | Test samples: {len(y_test)}")
-    print(f"Group dims: {group_dims} | Classes: {y_all.shape[1]}")
+    print(f"Groups: {list(zip(group_names, group_dims))} | Classes: {y_all.shape[1]}")
     print(
-        f"Group embed dim: {config.group_embed_dim} | "
+        f"Group embed dims: {model.group_embed_dims} | "
         f"Hidden dim: {config.hidden_dim} | Residual blocks: {config.num_blocks}"
     )
     print(
@@ -390,7 +462,7 @@ def main() -> None:
 
     for epoch in range(1, config.epochs + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        val_metrics = evaluate(model, val_loader, device, config.threshold)
+        val_metrics = evaluate(model, val_loader, device, config.threshold, group_names)
         row = {"epoch": epoch, "train_loss": float(train_loss), **{f"val_{k}": v for k, v in val_metrics.items()}}
         history.append(row)
 
@@ -401,6 +473,7 @@ def main() -> None:
                     "model_state_dict": model.state_dict(),
                     "config": asdict(config),
                     "group_dims": group_dims,
+                    "group_names": group_names,
                     "num_classes": y_all.shape[1],
                     "best_val_metrics": val_metrics,
                 },
@@ -412,16 +485,26 @@ def main() -> None:
             f"loss={train_loss:.4f} "
             f"val_mAP={val_metrics['mAP']:.4f} "
             f"val_micro_f1={val_metrics['micro_f1']:.4f} "
-            f"val_macro_f1={val_metrics['macro_f1']:.4f}"
+            f"val_macro_f1={val_metrics['macro_f1']:.4f} "
+            f"tag_gate={val_metrics.get('gate_semantic_tag_mean', 0.0):.4f}"
         )
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
-    test_metrics = evaluate(model, test_loader, device, config.threshold)
+    test_metrics = evaluate(model, test_loader, device, config.threshold, group_names)
 
     save_json(args.output_dir / "training_history.json", history)
     save_json(args.output_dir / "test_metrics.json", test_metrics)
-    save_json(args.output_dir / "config.json", asdict(config))
+    save_json(
+        args.output_dir / "config.json",
+        {
+            **asdict(config),
+            "train_tag_path": str(args.train_tag_path),
+            "test_tag_path": str(args.test_tag_path),
+            "group_names": group_names,
+            "group_dims": group_dims,
+        },
+    )
     print(f"Best checkpoint: {checkpoint_path}")
     print(f"Test metrics: {test_metrics}")
 

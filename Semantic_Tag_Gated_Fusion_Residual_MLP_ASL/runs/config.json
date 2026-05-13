@@ -1,0 +1,40 @@
+{
+  "batch_size": 256,
+  "epochs": 50,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "group_embed_dim": 128,
+  "tag_embed_dim": 512,
+  "hidden_dim": 512,
+  "num_blocks": 4,
+  "dropout": 0.3,
+  "val_ratio": 0.2,
+  "threshold": 0.5,
+  "random_seed": 42,
+  "asl_gamma_neg": 4.0,
+  "asl_gamma_pos": 1.0,
+  "asl_clip": 0.05,
+  "use_bow": true,
+  "max_train_samples": null,
+  "max_test_samples": null,
+  "train_tag_path": "NUS_WID_Tags/Train_Tags1k.dat",
+  "test_tag_path": "NUS_WID_Tags/Test_Tags1k.dat",
+  "group_names": [
+    "bow",
+    "ch",
+    "cm55",
+    "corr",
+    "edh",
+    "wt",
+    "semantic_tag"
+  ],
+  "group_dims": [
+    500,
+    64,
+    225,
+    144,
+    73,
+    128,
+    1000
+  ]
+}

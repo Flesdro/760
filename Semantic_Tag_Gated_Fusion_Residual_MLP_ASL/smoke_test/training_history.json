@@ -1,0 +1,16 @@
+[
+  {
+    "epoch": 1,
+    "train_loss": 0.02592995540512969,
+    "val_mAP": 0.11692206918071393,
+    "val_micro_f1": 0.42346938775510207,
+    "val_macro_f1": 0.03819507651134617,
+    "val_gate_bow_mean": 0.05236600711941719,
+    "val_gate_ch_mean": 0.3215183913707733,
+    "val_gate_cm55_mean": 0.06363483518362045,
+    "val_gate_corr_mean": 0.009440320543944836,
+    "val_gate_edh_mean": 0.23526763916015625,
+    "val_gate_wt_mean": 0.2938753366470337,
+    "val_gate_semantic_tag_mean": 0.023897534236311913
+  }
+]
