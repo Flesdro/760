@@ -23,6 +23,8 @@ TRAIN_FEATURE_PATHS = [
     Path("Extracted_Features/Normalized_WT.npy"),
 ]
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 @dataclass
 class TrainConfig:
@@ -159,6 +161,12 @@ def load_array(path: Path) -> np.ndarray:
 def save_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def resolve_project_path(path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
 
 
 def build_aligned_tag_cache(
@@ -331,7 +339,7 @@ def main() -> None:
     defaults = TrainConfig()
     parser = argparse.ArgumentParser(description="Train the notebook CLIP-style multi-view model.")
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
-    parser.add_argument("--output-dir", type=Path, default=Path("CLIP/runs"))
+    parser.add_argument("--output-dir", type=Path, default=Path("08_CLIP/runs"))
     parser.add_argument("--tag-cache-dir", type=Path, default=Path("."))
     parser.add_argument("--local-image-list", type=Path, default=Path("database_img.txt"))
     parser.add_argument("--official-image-list", type=Path, default=Path("TrainImagelist.txt"))
@@ -351,6 +359,13 @@ def main() -> None:
     parser.add_argument("--limit-samples", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=0)
     args = parser.parse_args()
+    args.data_root = resolve_project_path(args.data_root)
+    args.output_dir = resolve_project_path(args.output_dir)
+    args.tag_cache_dir = resolve_project_path(args.tag_cache_dir)
+    args.local_image_list = resolve_project_path(args.local_image_list)
+    args.official_image_list = resolve_project_path(args.official_image_list)
+    args.official_tag_path = resolve_project_path(args.official_tag_path)
+    args.graph_path = resolve_project_path(args.graph_path)
 
     config = TrainConfig(
         batch_size=args.batch_size,
