@@ -5,3 +5,5 @@ dataset
 *.npy
 
 *.pt
+
+dataset_bundle.zip
