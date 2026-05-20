@@ -1,0 +1,457 @@
+tag,times_in_label_top_k,example_labels
+animal,9,animal; bear; cat; cow; dog; elk; fox; tiger; zebra
+sea,9,beach; clouds; lake; ocean; sand; sky; sun; sunset; water
+landscape,9,clouds; grass; lake; mountain; rocks; sand; sky; tree; valley
+beach,8,beach; clouds; lake; ocean; sand; sky; sunset; water
+night,8,bridge; buildings; cityscape; fire; moon; nighttime; street; tower
+water,8,bridge; harbor; lake; ocean; reflection; swimmers; water; waterfall
+sunset,8,clouds; lake; ocean; reflection; sky; sun; sunset; water
+animals,7,animal; birds; cow; elk; horses; tiger; zebra
+ocean,7,beach; lake; ocean; sand; surf; water; whales
+city,7,bridge; buildings; cityscape; nighttime; street; tower; town
+wildlife,6,animal; birds; elk; fox; whales; zebra
+sky,6,clouds; moon; rainbow; sky; sun; sunset
+waves,5,beach; ocean; sand; surf; water
+nature,5,birds; fox; leaf; plants; zebra
+boat,5,boats; harbor; lake; reflection; water
+architecture,5,buildings; castle; tower; town; window
+buildings,5,buildings; cityscape; nighttime; street; town
+sunrise,5,clouds; lake; sky; sun; sunset
+green,5,food; garden; grass; leaf; plants
+snow,5,frost; glacier; mountain; snow; valley
+trees,5,frost; garden; grass; plants; tree
+glacier,5,glacier; mountain; rocks; snow; valley
+mountain,5,glacier; mountain; rocks; snow; valley
+mountains,5,glacier; mountain; rocks; snow; valley
+lake,5,lake; mountain; reflection; valley; water
+zoo,4,animal; bear; tiger; zebra
+building,4,buildings; tower; town; window
+skyline,4,buildings; cityscape; nighttime; tower
+urban,4,buildings; cityscape; street; town
+car,4,cars; road; vehicle; window
+traffic,4,cars; nighttime; road; street
+clouds,4,clouds; sky; sun; sunset
+sun,4,clouds; sky; sun; sunset
+underwater,4,coral; fish; swimmers; whales
+farm,4,cow; grass; horses; house
+flowers,4,flowers; garden; leaf; plants
+action,4,running; soccer; sports; surf
+aircraft,3,airport; military; plane
+airplane,3,airport; military; plane
+aviation,3,airport; military; plane
+cat,3,animal; cat; tiger
+dog,3,animal; dog; running
+pet,3,animal; cat; dog
+cats,3,animal; cat; tiger
+sand,3,beach; ocean; sand
+rocks,3,beach; rocks; waterfall
+mammal,3,bear; fox; whales
+boats,3,boats; harbor; reflection
+river,3,bridge; reflection; water
+cityscape,3,buildings; cityscape; nighttime
+skyscraper,3,buildings; cityscape; tower
+cars,3,cars; road; vehicle
+racing,3,cars; road; vehicle
+locomotive,3,cars; railroad; train
+engine,3,cars; railroad; train
+scuba,3,coral; fish; swimmers
+diving,3,coral; fish; swimmers
+dive,3,coral; fish; swimmers
+aquarium,3,coral; fish; whales
+marine,3,coral; fish; whales
+memorial,3,flags; police; statue
+stripes,3,flags; tiger; zebra
+protest,3,flags; police; protest
+protesters,3,flags; police; protest
+flower,3,flowers; leaf; plants
+garden,3,flowers; garden; leaf
+winter,3,frost; snow; tree
+ice,3,frost; glacier; snow
+cold,3,frost; glacier; snow
+autumn,3,garden; leaf; tree
+leaves,3,garden; leaf; tree
+house,3,garden; house; window
+reflection,3,lake; reflection; water
+silhouette,3,moon; sun; sunset
+hiking,3,mountain; valley; waterfall
+track,3,railroad; running; train
+hawaii,3,rainbow; surf; whales
+street,3,road; street; town
+sport,3,soccer; sports; swimmers
+sports,3,soccer; sports; surf
+airport,2,airport; plane
+airplanes,2,airport; plane
+jet,2,airport; plane
+plane,2,airport; plane
+flying,2,airport; plane
+bird,2,animal; birds
+deer,2,animal; elk
+seascape,2,beach; ocean
+coast,2,beach; ocean
+pebbles,2,beach; rocks
+alaska,2,bear; glacier
+baby,2,bear; fox
+ships,2,boats; harbor
+harbour,2,boats; harbor
+harbor,2,boats; harbor
+ceiling,2,book; map
+home,2,book; house
+furniture,2,book; computer
+library,2,book; earthquake
+kitchen,2,book; food
+downtown,2,buildings; cityscape
+automobile,2,cars; vehicle
+auto,2,cars; vehicle
+classic,2,cars; vehicle
+vehicle,2,cars; vehicle
+monument,2,castle; statue
+feline,2,cat; tiger
+pets,2,cat; dog
+cute,2,cat; dog
+lights,2,cityscape; nighttime
+cloud,2,clouds; sky
+blue,2,clouds; sky
+apple,2,computer; food
+coral,2,coral; fish
+fish,2,coral; fish
+reef,2,coral; fish
+reefs,2,coral; surf
+moose,2,cow; elk
+field,2,cow; grass
+nose,2,cow; dog
+rural,2,cow; house
+basketball,2,dancing; sports
+girls,2,dancing; person
+colorado,2,elk; fox
+storms,2,fire; rainbow
+storm,2,fire; rainbow
+weather,2,fire; rainbow
+riot,2,fire; police
+airforce,2,fire; military
+exposure,2,fire; nighttime
+photojournalism,2,fire; protest
+soldiers,2,flags; toy
+red,2,flags; food
+macro,2,flowers; plants
+excellence,2,flowers; plants
+cubs,2,fox; tiger
+frost,2,frost; snow
+frozen,2,frost; snow
+tree,2,frost; tree
+skiing,2,frost; snow
+iceland,2,glacier; horses
+switzerland,2,glacier; mountain
+reflections,2,harbor; reflection
+horse,2,horses; running
+houses,2,house; town
+abandoned,2,house; window
+fall,2,leaf; tree
+cake,2,map; toy
+sewing,2,map; toy
+figures,2,map; toy
+fighter,2,military; plane
+moon,2,moon; nighttime
+nighttime,2,moon; nighttime
+valley,2,mountain; valley
+wave,2,ocean; surf
+roadblock,2,police; road
+demonstration,2,police; protest
+railroad,2,railroad; train
+train,2,railroad; train
+rail,2,railroad; train
+railway,2,railroad; train
+tracks,2,railroad; train
+steam,2,railroad; train
+waterfalls,2,rainbow; waterfall
+maui,2,rainbow; whales
+canal,2,reflection; town
+road,2,road; sign
+formula,2,road; vehicle
+waterfall,2,rocks; waterfall
+athlete,2,running; sports
+africa,2,sand; zebra
+store,2,sign; toy
+missouri,2,sign; soccer
+football,2,soccer; sports
+buddha,2,statue; temple
+shops,2,street; town
+orange,2,sun; sunset
+pacific,2,surf; whales
+forest,2,tree; waterfall
+truck,2,vehicle; window
+runway,1,airport
+wing,1,airport
+shore,1,beach
+bear,1,bear
+bears,1,bear
+polar,1,bear
+giant,1,bear
+china,1,bear
+birds,1,birds
+eagle,1,birds
+hawk,1,birds
+booby,1,birds
+flight,1,birds
+wings,1,birds
+sailboat,1,boats
+sailing,1,boats
+sails,1,boats
+sail,1,boats
+ship,1,boats
+book,1,book
+apartments,1,book
+collage,1,book
+chapel,1,book
+judge,1,book
+bridge,1,bridge
+bridges,1,bridge
+bay,1,bridge
+arch,1,bridge
+cables,1,bridge
+gate,1,bridge
+castle,1,castle
+cathedral,1,castle
+ruins,1,castle
+church,1,castle
+palace,1,castle
+monastery,1,castle
+europa,1,castle
+spain,1,castle
+kitten,1,cat
+kitty,1,cat
+eyes,1,cat
+manhattan,1,cityscape
+mac,1,computer
+room,1,computer
+office,1,computer
+work,1,computer
+classroom,1,computer
+display,1,computer
+phone,1,computer
+chair,1,computer
+cow,1,cow
+cows,1,cow
+horns,1,cow
+dancing,1,dancing
+dance,1,dancing
+cheerleader,1,dancing
+movement,1,dancing
+cheering,1,dancing
+jump,1,dancing
+holland,1,dancing
+netherlands,1,dancing
+puppy,1,dog
+dogs,1,dog
+pups,1,dog
+adorable,1,dog
+earthquake,1,earthquake
+relief,1,earthquake
+pakistan,1,earthquake
+death,1,earthquake
+thailand,1,earthquake
+warehouse,1,earthquake
+hangar,1,earthquake
+old,1,earthquake
+antique,1,earthquake
+elk,1,elk
+antlers,1,elk
+fawn,1,elk
+caribou,1,elk
+firefighter,1,fire
+smoke,1,fire
+tropical,1,fish
+flags,1,flags
+flag,1,flags
+america,1,flags
+wind,1,flags
+petals,1,flowers
+blooms,1,flowers
+blossoms,1,flowers
+pink,1,flowers
+rose,1,flowers
+food,1,food
+vegetables,1,food
+fruit,1,food
+market,1,food
+bazaar,1,food
+coffee,1,food
+fox,1,fox
+kit,1,fox
+wolf,1,fox
+crystals,1,frost
+gardens,1,garden
+spring,1,garden
+path,1,garden
+arctic,1,glacier
+grass,1,grass
+fields,1,grass
+lawn,1,grass
+meadow,1,grass
+countryside,1,grass
+port,1,harbor
+dock,1,harbor
+pier,1,harbor
+horses,1,horses
+foals,1,horses
+argentina,1,horses
+brasil,1,horses
+brazil,1,horses
+mare,1,horses
+barn,1,house
+cottage,1,house
+cabin,1,house
+hut,1,house
+leaf,1,leaf
+plant,1,leaf
+maps,1,map
+art,1,map
+crafts,1,map
+cheese,1,map
+pottery,1,map
+charts,1,map
+military,1,military
+navy,1,military
+army,1,military
+soldier,1,military
+pilot,1,military
+space,1,moon
+stars,1,moon
+dark,1,moon
+harvest,1,moon
+evening,1,moon
+volcano,1,mountain
+portrait,1,person
+girl,1,person
+people,1,person
+woman,1,person
+man,1,person
+child,1,person
+boy,1,person
+fashion,1,person
+kids,1,person
+landing,1,plane
+plants,1,plants
+tulip,1,plants
+orchid,1,plants
+police,1,police
+officers,1,police
+uniform,1,police
+motorcycle,1,police
+march,1,protest
+iraq,1,protest
+rally,1,protest
+peace,1,protest
+bush,1,protest
+war,1,protest
+ties,1,railroad
+rainbow,1,rainbow
+rain,1,rainbow
+kauai,1,rainbow
+pond,1,reflection
+highway,1,road
+speed,1,road
+rock,1,rocks
+stones,1,rocks
+cliff,1,rocks
+running,1,running
+run,1,running
+motion,1,running
+play,1,running
+cross,1,running
+dunes,1,sand
+desert,1,sand
+egypt,1,sand
+sign,1,sign
+neon,1,sign
+signs,1,sign
+funny,1,sign
+theater,1,sign
+entrance,1,sign
+restaurant,1,sign
+soccer,1,soccer
+game,1,soccer
+stadium,1,soccer
+ball,1,soccer
+barcelona,1,soccer
+time,1,sports
+outdoor,1,sports
+tennis,1,sports
+baseball,1,sports
+statue,1,statue
+sculpture,1,statue
+cemetery,1,statue
+angel,1,statue
+graveyard,1,statue
+stone,1,statue
+tomb,1,statue
+sidewalk,1,street
+streets,1,street
+alley,1,street
+rays,1,sun
+horizon,1,sun
+dusk,1,sunset
+surf,1,surf
+oahu,1,surf
+swimming,1,swimmers
+swim,1,swimmers
+pool,1,swimmers
+sydney,1,swimmers
+club,1,tattoo
+designs,1,tattoo
+artist,1,tattoo
+design,1,tattoo
+pictures,1,tattoo
+french,1,tattoo
+model,1,tattoo
+picture,1,tattoo
+image,1,tattoo
+male,1,tattoo
+temple,1,temple
+buddhist,1,temple
+buddhism,1,temple
+religion,1,temple
+ancient,1,temple
+heritage,1,temple
+asia,1,temple
+islam,1,temple
+burma,1,temple
+tiger,1,tiger
+leopard,1,tiger
+tower,1,tower
+lighthouse,1,tower
+berlin,1,tower
+mosque,1,tower
+town,1,town
+toy,1,toy
+toys,1,toy
+handmade,1,toy
+doll,1,toy
+plastic,1,toy
+station,1,train
+trunk,1,tree
+fog,1,tree
+valleys,1,valley
+hills,1,valley
+transportation,1,vehicle
+moss,1,waterfall
+stream,1,waterfall
+creek,1,waterfall
+oregon,1,waterfall
+wedding,1,wedding
+bride,1,wedding
+groom,1,wedding
+ceremony,1,wedding
+couple,1,wedding
+kiss,1,wedding
+dress,1,wedding
+love,1,wedding
+photographer,1,wedding
+happy,1,wedding
+australia,1,whales
+window,1,window
+windows,1,window
+decay,1,window
+door,1,window
+zebra,1,zebra
+safari,1,zebra
+black,1,zebra
