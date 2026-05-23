@@ -7,3 +7,7 @@ dataset
 *.pt
 
 dataset_bundle.zip
+
+images
+
+NUS-WIDE-images
