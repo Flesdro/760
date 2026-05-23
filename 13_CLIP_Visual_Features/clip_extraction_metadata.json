@@ -1,0 +1,9 @@
+{
+  "clip_model": "ViT-B/32",
+  "total_entries": 193734,
+  "found": 193734,
+  "missing": 0,
+  "match_ratio": 1.0,
+  "feature_dim": 512,
+  "output_path": "/home/jue/760/13_CLIP_Visual_Features/clip_visual_features.npy"
+}
