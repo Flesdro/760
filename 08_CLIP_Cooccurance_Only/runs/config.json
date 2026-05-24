@@ -1,0 +1,13 @@
+{
+  "batch_size": 128,
+  "epochs": 20,
+  "lr": 0.0001,
+  "patience": 5,
+  "val_ratio": 0.1,
+  "threshold": 0.5,
+  "random_seed": 42,
+  "dropout": 0.3,
+  "refiner_alpha": 0.2,
+  "use_refiner": true,
+  "limit_samples": null
+}

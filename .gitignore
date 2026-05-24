@@ -12,8 +12,8 @@ images
 
 NUS-WIDE-images
 
-08_CLIP_Cooccurance_Only
-09_CLIP_No_Aligned_Tag_Input
+#08_CLIP_Cooccurance_Only
+#09_CLIP_No_Aligned_Tag_Input
 10_Tag_Importance_Analysis
 11_without_75_tags
 12_vision_only
