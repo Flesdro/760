@@ -1,8 +1,0 @@
-{
-  "mAP": 0.20591281250320154,
-  "micro_f1": 0.04185351270553064,
-  "macro_f1": 0.009681611435997401,
-  "evaluation_split": "validation",
-  "best_epoch": 1,
-  "best_val_mAP": 0.20591281250320154
-}
