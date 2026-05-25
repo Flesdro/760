@@ -1,0 +1,597 @@
+from __future__ import annotations
+
+import argparse
+import json
+import random
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn as nn
+from sklearn.metrics import average_precision_score, f1_score
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
+
+
+TRAIN_VISUAL_FEATURE_PATHS = [
+    Path("Extracted_Features/BoW_int.npy"),
+    Path("Extracted_Features/Normalized_CH.npy"),
+    Path("Extracted_Features/Normalized_CM55.npy"),
+    Path("Extracted_Features/Normalized_CORR.npy"),
+    Path("Extracted_Features/Normalized_EDH.npy"),
+    Path("Extracted_Features/Normalized_WT.npy"),
+]
+GROUP_NAMES = ["bow", "ch", "cm55", "corr", "edh", "wt", "semantic_tag_no_overlap"]
+
+
+@dataclass
+class TrainConfig:
+    batch_size: int = 128
+    epochs: int = 50
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+    hidden_dims: tuple[int, ...] = (512, 512, 512, 512)
+    dropout: float = 0.3
+    activation: str = "gelu"
+    val_ratio: float = 0.1
+    threshold: float = 0.5
+    random_seed: int = 42
+    cooc_threshold: float = 0.2
+    lambda_cooc: float = 0.5
+    max_train_samples: int | None = None
+
+
+class FeatureGroupDataset(Dataset):
+    def __init__(self, feature_groups: list[np.ndarray], labels: np.ndarray):
+        self.feature_groups = [
+            torch.from_numpy(np.ascontiguousarray(features, dtype=np.float32))
+            for features in feature_groups
+        ]
+        self.labels = torch.from_numpy(np.ascontiguousarray(labels, dtype=np.float32))
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> tuple[list[torch.Tensor], torch.Tensor]:
+        return [features[idx] for features in self.feature_groups], self.labels[idx]
+
+
+class PureMLPCooccurrence(nn.Module):
+    def __init__(
+        self,
+        group_dims: list[int],
+        num_classes: int,
+        hidden_dims: tuple[int, ...],
+        dropout: float,
+        activation: str,
+        adjacency: torch.Tensor,
+        lambda_cooc: float,
+    ):
+        super().__init__()
+        layers: list[nn.Module] = []
+        prev_dim = sum(group_dims)
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(make_activation(activation))
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
+            prev_dim = hidden_dim
+        layers.append(nn.Linear(prev_dim, num_classes))
+        self.mlp = nn.Sequential(*layers)
+        self.register_buffer("cooc_adjacency", adjacency)
+        self.lambda_cooc = nn.Parameter(torch.tensor(float(lambda_cooc)))
+
+    def forward(self, feature_groups: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        x = torch.cat(feature_groups, dim=1)
+        raw_logits = self.mlp(x)
+        cooc_logits = torch.matmul(raw_logits, self.cooc_adjacency)
+        logits = raw_logits + self.lambda_cooc * cooc_logits
+        return logits, raw_logits
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def get_device() -> torch.device:
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+def make_activation(name: str) -> nn.Module:
+    activations = {
+        "relu": nn.ReLU,
+        "gelu": nn.GELU,
+        "silu": nn.SiLU,
+    }
+    if name not in activations:
+        raise ValueError(f"Unsupported activation: {name}")
+    return activations[name]()
+
+
+def parse_hidden_dims(value: str) -> tuple[int, ...]:
+    dims = tuple(int(part.strip()) for part in value.split(",") if part.strip())
+    if not dims:
+        raise argparse.ArgumentTypeError("hidden dims must contain at least one integer")
+    return dims
+
+
+def load_reference_config(path: Path) -> dict[str, object]:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing reference config: {path.resolve()}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_array(path: Path) -> np.ndarray:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing file: {path.resolve()}")
+    if path.suffix == ".npy":
+        return np.load(path).astype(np.float32)
+    return np.loadtxt(path).astype(np.float32)
+
+
+def load_text_lines(path: Path) -> list[str]:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing file: {path.resolve()}")
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def normalize_name(path: str) -> str:
+    return Path(path.replace("\\", "/")).name.lower()
+
+
+def read_image_names(path: Path) -> list[str]:
+    return [normalize_name(line.strip()) for line in load_text_lines(path) if line.strip()]
+
+
+def load_label_names(path: Path) -> list[str]:
+    return [line.strip().lower() for line in load_text_lines(path) if line.strip()]
+
+
+def build_overlap_indices(tag_names: list[str], label_names: list[str]) -> tuple[list[str], list[int]]:
+    overlap_labels: list[str] = []
+    overlap_indices: list[int] = []
+    label_set = set(label_names)
+    for idx, tag in enumerate(tag_names):
+        if tag in label_set:
+            overlap_labels.append(tag)
+            overlap_indices.append(idx)
+    return overlap_labels, overlap_indices
+
+
+def get_overlap_from_config(
+    reference_config: dict[str, object],
+    data_root: Path,
+    tag_list_path: Path,
+    label_names_path: Path,
+) -> tuple[list[str], list[int]]:
+    tag_metadata = reference_config.get("tag_metadata", {})
+    if isinstance(tag_metadata, dict) and "overlap_indices" in tag_metadata:
+        overlap_labels = tag_metadata.get("overlap_labels", [])
+        labels = [str(label) for label in overlap_labels] if isinstance(overlap_labels, list) else []
+        return labels, [int(idx) for idx in tag_metadata["overlap_indices"]]
+
+    tag_names = load_label_names(data_root / tag_list_path)
+    label_names = load_label_names(data_root / label_names_path)
+    return build_overlap_indices(tag_names, label_names)
+
+
+def clean_tag_matrix(tag_matrix: np.ndarray, overlap_indices: list[int]) -> np.ndarray:
+    if not overlap_indices:
+        return tag_matrix.astype(np.float32, copy=False)
+    return np.delete(tag_matrix, overlap_indices, axis=1).astype(np.float32, copy=False)
+
+
+def load_visual_groups(data_root: Path, visual_paths: list[Path]) -> list[np.ndarray]:
+    arrays = [load_array(data_root / path) for path in visual_paths]
+    n_rows = {array.shape[0] for array in arrays}
+    if len(n_rows) != 1:
+        min_rows = min(n_rows)
+        print(
+            "Warning: visual feature row counts do not match "
+            f"{sorted(n_rows)}; trimming all groups to {min_rows} rows by prefix."
+        )
+        arrays = [array[:min_rows] for array in arrays]
+    return arrays
+
+
+def build_aligned_no_overlap_tags(
+    data_root: Path,
+    train_tag_path: Path,
+    local_image_list: Path,
+    official_image_list: Path,
+    overlap_indices: list[int],
+) -> tuple[np.ndarray, np.ndarray, dict[str, object], dict[str, object]]:
+    local_names = read_image_names(local_image_list)
+    official_names = read_image_names(official_image_list)
+    official_index = {name: idx for idx, name in enumerate(official_names)}
+
+    official_tags = load_array(data_root / train_tag_path)
+    clean_tags = clean_tag_matrix(official_tags, overlap_indices)
+
+    aligned_tags = np.zeros((len(local_names), clean_tags.shape[1]), dtype=np.float32)
+    matched_indices: list[int] = []
+    missing = 0
+    for local_idx, name in enumerate(local_names):
+        official_idx = official_index.get(name)
+        if official_idx is None:
+            missing += 1
+            continue
+        aligned_tags[local_idx] = clean_tags[official_idx]
+        matched_indices.append(local_idx)
+
+    matched_indices_array = np.asarray(matched_indices, dtype=np.int64)
+    tag_metadata = {
+        "tag_path": str(train_tag_path),
+        "original_shape": list(official_tags.shape),
+        "clean_shape": list(clean_tags.shape),
+        "num_overlap": len(overlap_indices),
+        "overlap_indices": overlap_indices,
+    }
+    alignment_metadata = {
+        "local_images": len(local_names),
+        "official_train_images": len(official_names),
+        "matched": int(len(matched_indices_array)),
+        "missing": int(missing),
+        "match_ratio": float(len(matched_indices_array) / max(len(local_names), 1)),
+    }
+    return aligned_tags, matched_indices_array, tag_metadata, alignment_metadata
+
+
+def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float) -> torch.Tensor:
+    cooc = label_matrix.T @ label_matrix
+    diag = cooc.diagonal().clip(min=1.0)
+    cooc_prob = cooc / diag[:, None]
+    adjacency = (cooc_prob > threshold).astype(np.float32)
+    np.fill_diagonal(adjacency, 1.0)
+    row_sum = adjacency.sum(axis=1, keepdims=True).clip(min=1.0)
+    adjacency = adjacency / row_sum
+    return torch.from_numpy(adjacency.astype(np.float32))
+
+
+def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[np.ndarray]:
+    return [features[indices] for features in feature_groups]
+
+
+def evaluate(
+    model: PureMLPCooccurrence,
+    loader: DataLoader,
+    device: torch.device,
+    threshold: float,
+) -> dict[str, float]:
+    model.eval()
+    all_targets, all_probs, all_preds = [], [], []
+
+    with torch.no_grad():
+        for feature_groups, y in loader:
+            feature_groups = [features.to(device) for features in feature_groups]
+            logits, _ = model(feature_groups)
+            probs = torch.sigmoid(logits)
+            all_probs.append(probs.cpu().numpy())
+            all_preds.append((probs > threshold).float().cpu().numpy())
+            all_targets.append(y.numpy())
+
+    targets = np.vstack(all_targets)
+    probs = np.vstack(all_probs)
+    preds = np.vstack(all_preds)
+    valid_classes = targets.sum(axis=0) > 0
+    if valid_classes.any():
+        map_score = average_precision_score(targets[:, valid_classes], probs[:, valid_classes], average="macro")
+    else:
+        map_score = 0.0
+    return {
+        "mAP": float(map_score),
+        "micro_f1": float(f1_score(targets, preds, average="micro", zero_division=0)),
+        "macro_f1": float(f1_score(targets, preds, average="macro", zero_division=0)),
+    }
+
+
+def train_one_epoch(
+    model: PureMLPCooccurrence,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+) -> float:
+    model.train()
+    total_loss = 0.0
+    total_seen = 0
+
+    for feature_groups, y in loader:
+        feature_groups = [features.to(device) for features in feature_groups]
+        y = y.to(device)
+        optimizer.zero_grad(set_to_none=True)
+        logits, _ = model(feature_groups)
+        loss = criterion(logits, y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item() * len(y)
+        total_seen += len(y)
+
+    return total_loss / max(total_seen, 1)
+
+
+def save_json(path: Path, data: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def load_checkpoint(path: Path, device: torch.device) -> dict[str, object]:
+    try:
+        return torch.load(path, map_location=device, weights_only=True)
+    except TypeError:
+        return torch.load(path, map_location=device)
+
+
+def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
+    default_hidden_dim = int(reference_config.get("hidden_dim", 512))
+    default_num_layers = int(reference_config.get("num_blocks", 4))
+    parser = argparse.ArgumentParser(
+        description="Train no-overlap semantic-tag Pure MLP + BCE + co-occurrence."
+    )
+    parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
+    parser.add_argument("--data-root", type=Path, default=Path("dataset"))
+    parser.add_argument("--output-dir", type=Path, default=Path("20/mlp_bce_cooccurrence_runs"))
+    parser.add_argument(
+        "--local-image-list",
+        type=Path,
+        default=Path(str(reference_config.get("local_image_list", "database_img.txt"))),
+    )
+    parser.add_argument(
+        "--official-image-list",
+        type=Path,
+        default=Path(str(reference_config.get("official_image_list", "TrainImagelist.txt"))),
+    )
+    parser.add_argument(
+        "--train-tag-path",
+        type=Path,
+        default=Path(str(reference_config.get("train_tag_path", "NUS_WID_Tags/Train_Tags1k.dat"))),
+    )
+    parser.add_argument(
+        "--tag-list-path",
+        type=Path,
+        default=Path(str(reference_config.get("tag_list_path", "NUS_WID_Tags/TagList1k.txt"))),
+    )
+    parser.add_argument(
+        "--label-names-path",
+        type=Path,
+        default=Path(str(reference_config.get("label_names_path", "NUS-WIDE/NUS-WIDE/ConceptsList/Concepts81.txt"))),
+    )
+    parser.add_argument("--epochs", type=int, default=int(reference_config.get("epochs", 50)))
+    parser.add_argument("--batch-size", type=int, default=int(reference_config.get("batch_size", 128)))
+    parser.add_argument("--lr", type=float, default=float(reference_config.get("lr", 1e-3)))
+    parser.add_argument("--weight-decay", type=float, default=float(reference_config.get("weight_decay", 1e-4)))
+    parser.add_argument("--hidden-dim", type=int, default=default_hidden_dim)
+    parser.add_argument("--num-layers", type=int, default=default_num_layers)
+    parser.add_argument("--hidden-dims", type=parse_hidden_dims, default=None)
+    parser.add_argument("--dropout", type=float, default=float(reference_config.get("dropout", 0.3)))
+    parser.add_argument("--activation", choices=("relu", "gelu", "silu"), default="gelu")
+    parser.add_argument("--threshold", type=float, default=float(reference_config.get("threshold", 0.5)))
+    parser.add_argument("--val-ratio", type=float, default=float(reference_config.get("val_ratio", 0.1)))
+    parser.add_argument("--seed", type=int, default=int(reference_config.get("random_seed", 42)))
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--cooc-threshold", type=float, default=0.2)
+    parser.add_argument("--lambda-cooc", type=float, default=0.5)
+    parser.add_argument("--max-train-samples", type=int, default=reference_config.get("max_train_samples"))
+    return parser
+
+
+def main() -> None:
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
+    pre_args, _ = pre_parser.parse_known_args()
+    reference_config = load_reference_config(pre_args.config_path)
+
+    parser = make_parser(reference_config)
+    args = parser.parse_args()
+    reference_config = load_reference_config(args.config_path)
+
+    hidden_dims = args.hidden_dims or tuple([args.hidden_dim] * args.num_layers)
+    config = TrainConfig(
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        hidden_dims=hidden_dims,
+        dropout=args.dropout,
+        activation=args.activation,
+        val_ratio=args.val_ratio,
+        threshold=args.threshold,
+        random_seed=args.seed,
+        cooc_threshold=args.cooc_threshold,
+        lambda_cooc=args.lambda_cooc,
+        max_train_samples=args.max_train_samples,
+    )
+    if config.epochs < 1:
+        raise ValueError("--epochs must be at least 1 so a checkpoint can be selected.")
+    if config.batch_size < 1:
+        raise ValueError("--batch-size must be at least 1.")
+    if not 0.0 < config.val_ratio < 1.0:
+        raise ValueError("--val-ratio must be between 0 and 1.")
+    if config.max_train_samples is not None and config.max_train_samples < 2:
+        raise ValueError("--max-train-samples must be at least 2 when provided.")
+
+    set_seed(config.random_seed)
+    device = get_device()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Using device: {device}")
+    print(f"Reference config: {args.config_path}")
+    print("Loading no-overlap aligned views using experiment-20 settings...")
+
+    overlap_labels, overlap_indices = get_overlap_from_config(
+        reference_config=reference_config,
+        data_root=args.data_root,
+        tag_list_path=args.tag_list_path,
+        label_names_path=args.label_names_path,
+    )
+    aligned_tags, matched_indices_array, tag_metadata, alignment_metadata = build_aligned_no_overlap_tags(
+        data_root=args.data_root,
+        train_tag_path=args.train_tag_path,
+        local_image_list=args.local_image_list,
+        official_image_list=args.official_image_list,
+        overlap_indices=overlap_indices,
+    )
+    tag_metadata["overlap_labels"] = overlap_labels
+
+    cache_dir = args.output_dir / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.save(cache_dir / "aligned_tag_feature_no_overlap.npy", aligned_tags)
+    np.save(cache_dir / "matched_indices_no_overlap.npy", matched_indices_array)
+    save_json(cache_dir / "alignment_metadata.json", alignment_metadata)
+    save_json(cache_dir / "tag_metadata.json", tag_metadata)
+
+    feature_groups = load_visual_groups(args.data_root, TRAIN_VISUAL_FEATURE_PATHS)
+    labels = load_array(args.data_root / "database_labels_81_big.npy")
+    feature_groups = [features[matched_indices_array] for features in feature_groups]
+    labels = labels[matched_indices_array]
+    tags = aligned_tags[matched_indices_array]
+
+    if config.max_train_samples is not None:
+        keep = min(config.max_train_samples, len(labels))
+        feature_groups = [features[:keep] for features in feature_groups]
+        labels = labels[:keep]
+        tags = tags[:keep]
+        matched_indices_array = matched_indices_array[:keep]
+
+    feature_groups.append(tags)
+    group_dims = [features.shape[1] for features in feature_groups]
+
+    idx_train, idx_val = train_test_split(
+        np.arange(len(labels)),
+        test_size=config.val_ratio,
+        random_state=config.random_seed,
+        shuffle=True,
+    )
+    cooc_adjacency = build_cooccurrence_matrix(labels[idx_train], threshold=config.cooc_threshold)
+    cooc_stats = {
+        "shape": list(cooc_adjacency.shape),
+        "nonzero_entries": int((cooc_adjacency > 0).sum().item()),
+        "total_entries": int(cooc_adjacency.numel()),
+        "threshold": config.cooc_threshold,
+        "lambda_init": config.lambda_cooc,
+    }
+
+    train_loader = DataLoader(
+        FeatureGroupDataset(select_rows(feature_groups, idx_train), labels[idx_train]),
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+    )
+    val_loader = DataLoader(
+        FeatureGroupDataset(select_rows(feature_groups, idx_val), labels[idx_val]),
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+    )
+
+    model = PureMLPCooccurrence(
+        group_dims=group_dims,
+        num_classes=labels.shape[1],
+        hidden_dims=config.hidden_dims,
+        dropout=config.dropout,
+        activation=config.activation,
+        adjacency=cooc_adjacency,
+        lambda_cooc=config.lambda_cooc,
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
+
+    best_map = -1.0
+    history: list[dict[str, float]] = []
+    checkpoint_path = args.output_dir / "mlp_bce_cooccurrence_no_overlap_best.pt"
+
+    print("\n" + "=" * 64)
+    print("Training: Pure MLP + BCE + Co-occurrence (Experiment-20 no-overlap data)")
+    print("=" * 64)
+    print(f"Matched samples: {len(matched_indices_array)}")
+    print(f"Train samples: {len(idx_train)} | Val samples: {len(idx_val)}")
+    print(f"Group names: {GROUP_NAMES}")
+    print(f"Group dims: {group_dims} | Input dim: {sum(group_dims)} | Classes: {labels.shape[1]}")
+    print(f"MLP hidden_dims={config.hidden_dims}, activation={config.activation}, dropout={config.dropout}")
+    print(f"Loss: BCEWithLogitsLoss")
+    print(
+        f"Co-occurrence threshold={config.cooc_threshold}, "
+        f"nonzero={cooc_stats['nonzero_entries']}/{cooc_stats['total_entries']}, "
+        f"lambda_init={config.lambda_cooc}"
+    )
+
+    for epoch in range(1, config.epochs + 1):
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        val_metrics = evaluate(model, val_loader, device, config.threshold)
+        row = {
+            "epoch": epoch,
+            "train_loss": float(train_loss),
+            "lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
+            **{f"val_{key}": value for key, value in val_metrics.items()},
+        }
+        history.append(row)
+
+        if val_metrics["mAP"] > best_map:
+            best_map = val_metrics["mAP"]
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "config": asdict(config),
+                    "reference_config_path": str(args.config_path),
+                    "group_dims": group_dims,
+                    "group_names": GROUP_NAMES,
+                    "num_classes": labels.shape[1],
+                    "best_val_metrics": val_metrics,
+                    "tag_metadata": tag_metadata,
+                    "alignment_metadata": alignment_metadata,
+                    "cooccurrence": cooc_stats,
+                },
+                checkpoint_path,
+            )
+
+        print(
+            f"Epoch {epoch:03d}/{config.epochs} "
+            f"loss={train_loss:.4f} "
+            f"val_mAP={val_metrics['mAP']:.4f} "
+            f"val_micro_f1={val_metrics['micro_f1']:.4f} "
+            f"val_macro_f1={val_metrics['macro_f1']:.4f} "
+            f"lambda_cooc={float(model.lambda_cooc.detach().cpu().item()):.4f}"
+        )
+
+    checkpoint = load_checkpoint(checkpoint_path, device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    final_val_metrics = evaluate(model, val_loader, device, config.threshold)
+
+    save_json(args.output_dir / "training_history.json", history)
+    save_json(args.output_dir / "validation_metrics.json", final_val_metrics)
+    save_json(
+        args.output_dir / "config.json",
+        {
+            **asdict(config),
+            "reference_config_path": str(args.config_path),
+            "local_image_list": str(args.local_image_list),
+            "official_image_list": str(args.official_image_list),
+            "train_tag_path": str(args.train_tag_path),
+            "tag_list_path": str(args.tag_list_path),
+            "label_names_path": str(args.label_names_path),
+            "group_names": GROUP_NAMES,
+            "group_dims": group_dims,
+            "tag_metadata": tag_metadata,
+            "alignment_metadata": alignment_metadata,
+            "cooccurrence": cooc_stats,
+            "loss": "BCEWithLogitsLoss",
+            "model": "PureMLPCooccurrence",
+            "final_lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
+        },
+    )
+    print(f"Best checkpoint: {checkpoint_path}")
+    print(f"Validation metrics: {final_val_metrics}")
+
+
+if __name__ == "__main__":
+    main()

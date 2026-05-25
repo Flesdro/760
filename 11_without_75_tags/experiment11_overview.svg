@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1080" viewBox="0 0 1600 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Experiment 11 No-Overlap No-Leak Pipeline Overview</title>
+  <desc id="desc">Overview diagram of removing 75 overlapping tags from the NUS-WIDE 1K tag features, aligning the clean 925-dimensional tag features with local images, and training a multi-view model with label correlation refinement.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { font: 700 38px Arial, Helvetica, sans-serif; fill: #172033; }
+      .subtitle { font: 400 18px Arial, Helvetica, sans-serif; fill: #586276; }
+      .section-title { font: 700 21px Arial, Helvetica, sans-serif; fill: #172033; }
+      .label { font: 700 18px Arial, Helvetica, sans-serif; fill: #172033; }
+      .small { font: 400 15px Arial, Helvetica, sans-serif; fill: #4f5d73; }
+      .tiny { font: 400 13px Arial, Helvetica, sans-serif; fill: #627086; }
+      .metric { font: 700 17px Arial, Helvetica, sans-serif; fill: #172033; }
+      .badge-text { font: 700 14px Arial, Helvetica, sans-serif; fill: #ffffff; }
+      .box { fill: #ffffff; stroke: #d9e0ea; stroke-width: 1.5; rx: 8; }
+      .box-blue { fill: #eef5ff; stroke: #9dc2f0; stroke-width: 1.5; rx: 8; }
+      .box-teal { fill: #ebf8f5; stroke: #8ccfbd; stroke-width: 1.5; rx: 8; }
+      .box-amber { fill: #fff5e6; stroke: #efbd71; stroke-width: 1.5; rx: 8; }
+      .box-rose { fill: #fff0f1; stroke: #e89aa1; stroke-width: 1.5; rx: 8; }
+      .box-violet { fill: #f2f0ff; stroke: #b8afea; stroke-width: 1.5; rx: 8; }
+      .soft-band { fill: #ffffff; stroke: #e3e8f0; stroke-width: 1.5; rx: 10; }
+      .arrow { stroke: #59677d; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .arrow-blue { stroke: #2878c7; stroke-width: 2.4; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-teal { stroke: #18977d; stroke-width: 2.4; fill: none; marker-end: url(#arrow-teal); }
+      .arrow-amber { stroke: #c57a19; stroke-width: 2.4; fill: none; marker-end: url(#arrow-amber); }
+      .dash { stroke-dasharray: 7 7; }
+      .divider { stroke: #e3e8f0; stroke-width: 1.5; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#59677d"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2878c7"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#18977d"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c57a19"/>
+    </marker>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="7" stdDeviation="10" flood-color="#14233b" flood-opacity="0.09"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1600" height="1080"/>
+
+  <text x="70" y="70" class="title">Experiment 11 Overview: No-Overlap Tag Features</text>
+  <text x="70" y="102" class="subtitle">Goal: remove target-label leakage from the semantic tag view, then evaluate the same multi-view fusion model on clean inputs.</text>
+
+  <rect x="70" y="135" width="1460" height="238" class="soft-band" filter="url(#shadow)"/>
+  <text x="100" y="174" class="section-title">A. Remove overlapping labels from the 1K tag feature</text>
+
+  <rect x="100" y="210" width="245" height="95" class="box-blue"/>
+  <text x="126" y="246" class="label">NUS-WIDE 1K tags</text>
+  <text x="126" y="274" class="small">Train_Tags1k.dat</text>
+  <text x="126" y="295" class="tiny">shape: 161,789 x 1,000</text>
+
+  <rect x="100" y="325" width="245" height="28" rx="14" fill="#2878c7"/>
+  <text x="130" y="345" class="badge-text">semantic input source</text>
+
+  <rect x="410" y="210" width="245" height="95" class="box-violet"/>
+  <text x="442" y="246" class="label">Target label set</text>
+  <text x="442" y="274" class="small">81 prediction labels</text>
+  <text x="442" y="295" class="tiny">database_labels_81_big.npy</text>
+
+  <path class="arrow-blue" d="M 345 257 L 398 257"/>
+  <path class="arrow" d="M 533 305 L 533 337 L 690 337 L 690 307"/>
+
+  <rect x="705" y="210" width="260" height="98" class="box-rose"/>
+  <text x="732" y="246" class="label">Overlap detection</text>
+  <text x="732" y="274" class="small">match tag names to 81 labels</text>
+  <text x="732" y="296" class="tiny">overlap = 75 labels</text>
+
+  <path class="arrow-amber" d="M 965 257 L 1018 257"/>
+
+  <rect x="1030" y="205" width="230" height="108" class="box-amber"/>
+  <text x="1058" y="242" class="label">Cut 75 tags</text>
+  <text x="1058" y="270" class="small">examples: sky, water, cat,</text>
+  <text x="1058" y="291" class="small">dog, beach, person</text>
+
+  <path class="arrow-teal" d="M 1260 257 L 1312 257"/>
+
+  <rect x="1325" y="205" width="175" height="108" class="box-teal"/>
+  <text x="1350" y="242" class="label">Clean tags</text>
+  <text x="1350" y="270" class="small">925 dimensions</text>
+  <text x="1350" y="292" class="tiny">no-overlap tag matrix</text>
+
+  <line x1="100" y1="386" x2="1500" y2="386" class="divider"/>
+
+  <rect x="70" y="415" width="1460" height="238" class="soft-band" filter="url(#shadow)"/>
+  <text x="100" y="454" class="section-title">B. Align clean tag features to the local image database</text>
+
+  <rect x="100" y="490" width="270" height="100" class="box"/>
+  <text x="128" y="526" class="label">Local image list</text>
+  <text x="128" y="554" class="small">database_img.txt</text>
+  <text x="128" y="576" class="tiny">193,734 images</text>
+
+  <rect x="430" y="490" width="280" height="100" class="box"/>
+  <text x="458" y="526" class="label">Official train list</text>
+  <text x="458" y="554" class="small">TrainImagelist.txt</text>
+  <text x="458" y="576" class="tiny">161,789 images</text>
+
+  <path class="arrow" d="M 370 540 L 418 540"/>
+
+  <rect x="770" y="480" width="250" height="120" class="box-blue"/>
+  <text x="800" y="516" class="label">Normalize names</text>
+  <text x="800" y="544" class="small">basename + lowercase</text>
+  <text x="800" y="567" class="small">build official index</text>
+
+  <path class="arrow-blue" d="M 710 540 L 758 540"/>
+  <path class="arrow-blue" d="M 1020 540 L 1068 540"/>
+
+  <rect x="1080" y="480" width="230" height="120" class="box-teal"/>
+  <text x="1110" y="516" class="label">Matched subset</text>
+  <text x="1110" y="544" class="small">116,127 images</text>
+  <text x="1110" y="567" class="small">match ratio 59.94%</text>
+
+  <path class="arrow-teal" d="M 1310 540 L 1358 540"/>
+
+  <rect x="1370" y="480" width="130" height="120" class="box-amber"/>
+  <text x="1392" y="514" class="label">Missing</text>
+  <text x="1392" y="542" class="small">77,607</text>
+  <text x="1392" y="565" class="small">zero-vector</text>
+
+  <rect x="420" y="612" width="760" height="28" rx="14" fill="#18977d"/>
+  <text x="605" y="632" class="badge-text">aligned_tag_feature_no_overlap.npy: 193,734 x 925, then matched subset: 116,127 x 925</text>
+
+  <rect x="70" y="695" width="1460" height="300" class="soft-band" filter="url(#shadow)"/>
+  <text x="100" y="734" class="section-title">C. Multi-view model and evaluation</text>
+
+  <rect x="100" y="775" width="160" height="92" class="box"/>
+  <text x="129" y="809" class="label">CH</text>
+  <text x="129" y="838" class="small">64 dims</text>
+
+  <rect x="280" y="775" width="160" height="92" class="box"/>
+  <text x="309" y="809" class="label">CM55</text>
+  <text x="309" y="838" class="small">225 dims</text>
+
+  <rect x="460" y="775" width="160" height="92" class="box"/>
+  <text x="489" y="809" class="label">CORR</text>
+  <text x="489" y="838" class="small">144 dims</text>
+
+  <rect x="640" y="775" width="160" height="92" class="box"/>
+  <text x="669" y="809" class="label">EDH</text>
+  <text x="669" y="838" class="small">73 dims</text>
+
+  <rect x="820" y="775" width="160" height="92" class="box"/>
+  <text x="849" y="809" class="label">WT</text>
+  <text x="849" y="838" class="small">128 dims</text>
+
+  <rect x="1000" y="775" width="190" height="92" class="box-teal"/>
+  <text x="1028" y="809" class="label">Clean tags</text>
+  <text x="1028" y="838" class="small">925 dims, no leak</text>
+
+  <path class="arrow" d="M 180 867 L 180 910 L 620 910"/>
+  <path class="arrow" d="M 360 867 L 360 910 L 620 910"/>
+  <path class="arrow" d="M 540 867 L 540 910 L 620 910"/>
+  <path class="arrow" d="M 720 867 L 720 910 L 720 910"/>
+  <path class="arrow" d="M 900 867 L 900 910 L 720 910"/>
+  <path class="arrow-teal" d="M 1095 867 L 1095 910 L 720 910"/>
+
+  <rect x="640" y="902" width="230" height="70" class="box-blue"/>
+  <text x="670" y="930" class="label">Per-view encoders</text>
+  <text x="670" y="955" class="small">hidden: 128 / 256 / 512</text>
+
+  <path class="arrow-blue" d="M 870 937 L 923 937"/>
+
+  <rect x="935" y="902" width="180" height="70" class="box-violet"/>
+  <text x="964" y="930" class="label">Fusion MLP</text>
+  <text x="964" y="955" class="small">concat dim = 1,280</text>
+
+  <path class="arrow" d="M 1115 937 L 1168 937"/>
+
+  <rect x="1180" y="902" width="155" height="70" class="box-amber"/>
+  <text x="1206" y="930" class="label">81 logits</text>
+  <text x="1206" y="955" class="small">BCE loss</text>
+
+  <path class="arrow-amber" d="M 1335 937 L 1388 937"/>
+
+  <rect x="1400" y="902" width="100" height="70" class="box-rose"/>
+  <text x="1426" y="929" class="label">Graph</text>
+  <text x="1421" y="954" class="small">81 x 81</text>
+
+  <path class="arrow-teal dash" d="M 1450 902 C 1450 835 1315 835 1260 902"/>
+
+  <rect x="100" y="1018" width="1400" height="1" fill="#dfe5ee"/>
+  <text x="100" y="1048" class="metric">Split: 104,514 train / 11,613 validation</text>
+  <text x="500" y="1048" class="metric">Best epoch: 23</text>
+  <text x="725" y="1048" class="metric">Val mAP: 0.4830</text>
+  <text x="965" y="1048" class="metric">Micro-F1: 0.6838</text>
+  <text x="1215" y="1048" class="metric">Macro-F1: 0.4531</text>
+</svg>
