@@ -1,0 +1,132 @@
+[
+  {
+    "image": "images_example/0001_11496596.jpg",
+    "output": "23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/demo_predictions/0001_11496596_exp23_prediction.png",
+    "top_predictions": [
+      {
+        "label": "person",
+        "probability": 0.9002693295478821
+      },
+      {
+        "label": "sports",
+        "probability": 0.20100486278533936
+      },
+      {
+        "label": "flags",
+        "probability": 0.16536888480186462
+      },
+      {
+        "label": "sky",
+        "probability": 0.15915299952030182
+      },
+      {
+        "label": "flowers",
+        "probability": 0.15075094997882843
+      },
+      {
+        "label": "tattoo",
+        "probability": 0.13271945714950562
+      },
+      {
+        "label": "dancing",
+        "probability": 0.12445928901433945
+      },
+      {
+        "label": "animal",
+        "probability": 0.1148189976811409
+      },
+      {
+        "label": "protest",
+        "probability": 0.11470741033554077
+      },
+      {
+        "label": "police",
+        "probability": 0.09631868451833725
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "person",
+        "probability": 0.9002693295478821
+      }
+    ],
+    "ground_truth": [
+      "person"
+    ],
+    "gate_weights": [
+      0.20055140554904938,
+      0.18631115555763245,
+      0.1223844364285469,
+      0.11858701705932617,
+      0.16054807603359222,
+      0.09496299177408218,
+      0.11665492504835129
+    ],
+    "database_index": 56377
+  },
+  {
+    "image": "images_example/0001_21769254.jpg",
+    "output": "23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/demo_predictions/0001_21769254_exp23_prediction.png",
+    "top_predictions": [
+      {
+        "label": "person",
+        "probability": 0.8780261874198914
+      },
+      {
+        "label": "road",
+        "probability": 0.18917866051197052
+      },
+      {
+        "label": "fox",
+        "probability": 0.1714058518409729
+      },
+      {
+        "label": "sky",
+        "probability": 0.1398221254348755
+      },
+      {
+        "label": "animal",
+        "probability": 0.09390829503536224
+      },
+      {
+        "label": "wedding",
+        "probability": 0.0877184048295021
+      },
+      {
+        "label": "dog",
+        "probability": 0.07913142442703247
+      },
+      {
+        "label": "window",
+        "probability": 0.07073252648115158
+      },
+      {
+        "label": "police",
+        "probability": 0.06775187700986862
+      },
+      {
+        "label": "cat",
+        "probability": 0.06130755692720413
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "person",
+        "probability": 0.8780261874198914
+      }
+    ],
+    "ground_truth": [
+      "person"
+    ],
+    "gate_weights": [
+      0.16293121874332428,
+      0.11761283874511719,
+      0.09638988971710205,
+      0.0911918506026268,
+      0.12832744419574738,
+      0.07660167664289474,
+      0.32694509625434875
+    ],
+    "database_index": 63629
+  }
+]

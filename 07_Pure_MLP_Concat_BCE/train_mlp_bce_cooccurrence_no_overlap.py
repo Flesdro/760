@@ -138,6 +138,53 @@ def load_array(path: Path) -> np.ndarray:
     return np.loadtxt(path).astype(np.float32)
 
 
+def load_text_lines(path: Path) -> list[str]:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing file: {path.resolve()}")
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def normalize_name(path: str) -> str:
+    path = path.replace("\\", "/")
+    return Path(path).name.lower()
+
+
+def read_image_names(path: Path) -> list[str]:
+    return [normalize_name(line.strip()) for line in load_text_lines(path) if line.strip()]
+
+
+def resolve_input_path(data_root: Path, path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    data_path = data_root / path
+    if data_path.exists():
+        return data_path
+    return path
+
+
+def build_image_alignment(local_names: list[str], official_names: list[str]) -> tuple[np.ndarray, dict[str, object]]:
+    official_index: dict[str, int] = {}
+    for idx, name in enumerate(official_names):
+        official_index.setdefault(name, idx)
+
+    matched_local_indices: list[int] = []
+    missing = 0
+    for local_idx, name in enumerate(local_names):
+        if name not in official_index:
+            missing += 1
+            continue
+        matched_local_indices.append(local_idx)
+
+    metadata = {
+        "local_images": len(local_names),
+        "official_train_images": len(official_names),
+        "matched": int(len(matched_local_indices)),
+        "missing": int(missing),
+        "match_ratio": float(len(matched_local_indices) / max(len(local_names), 1)),
+    }
+    return np.asarray(matched_local_indices, dtype=np.int64), metadata
+
+
 def load_visual_groups(data_root: Path, visual_paths: list[Path]) -> list[np.ndarray]:
     arrays = [load_array(data_root / path) for path in visual_paths]
     n_rows = {array.shape[0] for array in arrays}
@@ -242,8 +289,10 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train visual-only Pure MLP + BCE + co-occurrence."
     )
-    parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
+    parser.add_argument("--config-path", type=Path, default=Path("20_train_gated_fusion_residual_mlp_asl_tag_no_overlap/config.json"))
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
+    parser.add_argument("--local-image-list", type=Path, default=Path("database_img.txt"))
+    parser.add_argument("--official-image-list", type=Path, default=Path("TrainImagelist.txt"))
     parser.add_argument("--output-dir", type=Path, default=Path("07_Pure_MLP_Concat_BCE/mlp_bce_cooccurrence_runs"))
     parser.add_argument("--epochs", type=int, default=int(reference_config.get("epochs", 50)))
     parser.add_argument("--batch-size", type=int, default=int(reference_config.get("batch_size", 128)))
@@ -267,7 +316,7 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
 
 def main() -> None:
     pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
+    pre_parser.add_argument("--config-path", type=Path, default=Path("20_train_gated_fusion_residual_mlp_asl_tag_no_overlap/config.json"))
     pre_args, _ = pre_parser.parse_known_args()
     reference_config = load_reference_config(pre_args.config_path)
 
@@ -321,6 +370,12 @@ def main() -> None:
             "Visual features and labels must have matching rows: "
             f"features={sorted(feature_rows)}, labels={labels.shape[0]}"
         )
+
+    local_names = read_image_names(resolve_input_path(args.data_root, args.local_image_list))
+    official_names = read_image_names(resolve_input_path(args.data_root, args.official_image_list))
+    matched_indices, alignment_metadata = build_image_alignment(local_names, official_names)
+    feature_groups = [features[matched_indices] for features in feature_groups]
+    labels = labels[matched_indices]
 
     if config.max_train_samples is not None:
         keep = min(config.max_train_samples, len(labels))
@@ -401,6 +456,8 @@ def main() -> None:
     print("\n" + "=" * 64)
     print("Training: Visual-only Pure MLP + BCE + Co-occurrence")
     print("=" * 64)
+    print("Alignment metadata:")
+    print(json.dumps(alignment_metadata, indent=2))
     print(f"Samples: {len(labels)}")
     print(f"Test ratio: {split_stats['test_ratio']:.2f}")
     print(f"Train samples: {len(idx_train)} | Test samples: {len(idx_test)}")
@@ -438,6 +495,7 @@ def main() -> None:
                     "best_val_metrics": val_metrics,
                     "split": split_stats,
                     "cooccurrence": cooc_stats,
+                    "alignment_metadata": alignment_metadata,
                 },
                 checkpoint_path,
             )
@@ -465,6 +523,9 @@ def main() -> None:
             "group_names": GROUP_NAMES,
             "group_dims": group_dims,
             "train_feature_paths": [str(path) for path in TRAIN_VISUAL_FEATURE_PATHS],
+            "local_image_list": str(args.local_image_list),
+            "official_image_list": str(args.official_image_list),
+            "alignment_metadata": alignment_metadata,
             "split": split_stats,
             "cooccurrence": cooc_stats,
             "loss": "BCEWithLogitsLoss",
