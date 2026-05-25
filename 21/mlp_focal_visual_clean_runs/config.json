@@ -15,12 +15,10 @@
   "test_ratio": 0.1,
   "threshold": 0.5,
   "random_seed": 42,
-  "cooc_threshold": 0.2,
-  "lambda_cooc": 0.5,
   "focal_gamma": 2.0,
   "focal_class_weight": true,
   "max_train_samples": null,
-  "reference_config_path": "20/config.json",
+  "reference_config_path": "20_train_gated_fusion_residual_mlp_asl_tag_no_overlap/config.json",
   "group_names": [
     "bow",
     "ch",
@@ -45,33 +43,31 @@
     "Extracted_Features/Normalized_EDH.npy",
     "Extracted_Features/Normalized_WT.npy"
   ],
+  "local_image_list": "database_img.txt",
+  "official_image_list": "TrainImagelist.txt",
+  "alignment_metadata": {
+    "local_images": 193734,
+    "official_train_images": 161789,
+    "matched": 116127,
+    "missing": 77607,
+    "match_ratio": 0.5994146613397752
+  },
   "split": {
     "train_ratio": 0.8,
     "test_ratio": 0.1,
     "val_ratio": 0.1,
-    "train_samples": 154986,
-    "test_samples": 19374,
-    "val_samples": 19374
-  },
-  "cooccurrence": {
-    "shape": [
-      81,
-      81
-    ],
-    "nonzero_entries": 355,
-    "total_entries": 6561,
-    "threshold": 0.2,
-    "lambda_init": 0.5
+    "train_samples": 92901,
+    "test_samples": 11613,
+    "val_samples": 11613
   },
   "focal_loss": {
     "gamma": 2.0,
     "class_weight": true,
-    "positive_rate_min": 1.9356586562935263e-05,
-    "positive_rate_max": 0.37724053859710693,
-    "positive_rate_mean": 0.030680427327752113
+    "positive_rate_min": 1.0764147191366646e-05,
+    "positive_rate_max": 0.3753242790699005,
+    "positive_rate_mean": 0.030595557764172554
   },
   "loss": "MultiLabelFocalLossWithLogits",
-  "model": "PureMLPCooccurrence",
-  "final_lambda_cooc": -0.036671318113803864,
+  "model": "PureMLP",
   "reported_metrics": "test_metrics.json"
 }

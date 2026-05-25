@@ -38,8 +38,6 @@ class TrainConfig:
     test_ratio: float = 0.1
     threshold: float = 0.5
     random_seed: int = 42
-    cooc_threshold: float = 0.2
-    lambda_cooc: float = 0.5
     asl_gamma_neg: float = 4.0
     asl_gamma_pos: float = 1.0
     asl_clip: float = 0.05
@@ -61,7 +59,7 @@ class FeatureGroupDataset(Dataset):
         return [features[idx] for features in self.feature_groups], self.labels[idx]
 
 
-class PureMLPCooccurrence(nn.Module):
+class PureMLP(nn.Module):
     def __init__(
         self,
         group_dims: list[int],
@@ -69,8 +67,6 @@ class PureMLPCooccurrence(nn.Module):
         hidden_dims: tuple[int, ...],
         dropout: float,
         activation: str,
-        adjacency: torch.Tensor,
-        lambda_cooc: float,
     ):
         super().__init__()
         layers: list[nn.Module] = []
@@ -83,15 +79,10 @@ class PureMLPCooccurrence(nn.Module):
             prev_dim = hidden_dim
         layers.append(nn.Linear(prev_dim, num_classes))
         self.mlp = nn.Sequential(*layers)
-        self.register_buffer("cooc_adjacency", adjacency)
-        self.lambda_cooc = nn.Parameter(torch.tensor(float(lambda_cooc)))
 
-    def forward(self, feature_groups: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, feature_groups: list[torch.Tensor]) -> torch.Tensor:
         x = torch.cat(feature_groups, dim=1)
-        raw_logits = self.mlp(x)
-        cooc_logits = torch.matmul(raw_logits, self.cooc_adjacency)
-        logits = raw_logits + self.lambda_cooc * cooc_logits
-        return logits, raw_logits
+        return self.mlp(x)
 
 
 class AsymmetricLossWithLogits(nn.Module):
@@ -230,23 +221,12 @@ def load_visual_groups(data_root: Path, visual_paths: list[Path]) -> list[np.nda
     return arrays
 
 
-def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float) -> torch.Tensor:
-    cooc = label_matrix.T @ label_matrix
-    diag = cooc.diagonal().clip(min=1.0)
-    cooc_prob = cooc / diag[:, None]
-    adjacency = (cooc_prob > threshold).astype(np.float32)
-    np.fill_diagonal(adjacency, 1.0)
-    row_sum = adjacency.sum(axis=1, keepdims=True).clip(min=1.0)
-    adjacency = adjacency / row_sum
-    return torch.from_numpy(adjacency.astype(np.float32))
-
-
 def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[np.ndarray]:
     return [features[indices] for features in feature_groups]
 
 
 def evaluate(
-    model: PureMLPCooccurrence,
+    model: PureMLP,
     loader: DataLoader,
     device: torch.device,
     threshold: float,
@@ -257,7 +237,7 @@ def evaluate(
     with torch.no_grad():
         for feature_groups, y in loader:
             feature_groups = [features.to(device) for features in feature_groups]
-            logits, _ = model(feature_groups)
+            logits = model(feature_groups)
             probs = torch.sigmoid(logits)
             all_probs.append(probs.cpu().numpy())
             all_preds.append((probs > threshold).float().cpu().numpy())
@@ -279,7 +259,7 @@ def evaluate(
 
 
 def train_one_epoch(
-    model: PureMLPCooccurrence,
+    model: PureMLP,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
@@ -293,7 +273,7 @@ def train_one_epoch(
         feature_groups = [features.to(device) for features in feature_groups]
         y = y.to(device)
         optimizer.zero_grad(set_to_none=True)
-        logits, _ = model(feature_groups)
+        logits = model(feature_groups)
         loss = criterion(logits, y)
         loss.backward()
         optimizer.step()
@@ -319,13 +299,13 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     default_hidden_dim = int(reference_config.get("hidden_dim", 512))
     default_num_layers = int(reference_config.get("num_blocks", 4))
     parser = argparse.ArgumentParser(
-        description="Train visual-only Pure MLP + ASL + co-occurrence."
+        description="Train visual-only Pure MLP + ASL."
     )
     parser.add_argument("--config-path", type=Path, default=Path("20_train_gated_fusion_residual_mlp_asl_tag_no_overlap/config.json"))
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
     parser.add_argument("--local-image-list", type=Path, default=Path("database_img.txt"))
     parser.add_argument("--official-image-list", type=Path, default=Path("TrainImagelist.txt"))
-    parser.add_argument("--output-dir", type=Path, default=Path("22/mlp_asl_visual_cooccurrence_runs"))
+    parser.add_argument("--output-dir", type=Path, default=Path("22/mlp_asl_visual_clean_runs"))
     parser.add_argument("--epochs", type=int, default=int(reference_config.get("epochs", 50)))
     parser.add_argument("--batch-size", type=int, default=int(reference_config.get("batch_size", 128)))
     parser.add_argument("--lr", type=float, default=float(reference_config.get("lr", 1e-3)))
@@ -340,8 +320,6 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     parser.add_argument("--test-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=int(reference_config.get("random_seed", 42)))
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--cooc-threshold", type=float, default=0.2)
-    parser.add_argument("--lambda-cooc", type=float, default=0.5)
     parser.add_argument("--asl-gamma-neg", type=float, default=float(reference_config.get("asl_gamma_neg", 4.0)))
     parser.add_argument("--asl-gamma-pos", type=float, default=float(reference_config.get("asl_gamma_pos", 1.0)))
     parser.add_argument("--asl-clip", type=float, default=float(reference_config.get("asl_clip", 0.05)))
@@ -372,8 +350,6 @@ def main() -> None:
         test_ratio=args.test_ratio,
         threshold=args.threshold,
         random_seed=args.seed,
-        cooc_threshold=args.cooc_threshold,
-        lambda_cooc=args.lambda_cooc,
         asl_gamma_neg=args.asl_gamma_neg,
         asl_gamma_pos=args.asl_gamma_pos,
         asl_clip=args.asl_clip,
@@ -444,14 +420,6 @@ def main() -> None:
         "test_samples": int(len(idx_test)),
         "val_samples": int(len(idx_val)),
     }
-    cooc_adjacency = build_cooccurrence_matrix(labels[idx_train], threshold=config.cooc_threshold)
-    cooc_stats = {
-        "shape": list(cooc_adjacency.shape),
-        "nonzero_entries": int((cooc_adjacency > 0).sum().item()),
-        "total_entries": int(cooc_adjacency.numel()),
-        "threshold": config.cooc_threshold,
-        "lambda_init": config.lambda_cooc,
-    }
     asl_stats = {
         "gamma_neg": config.asl_gamma_neg,
         "gamma_pos": config.asl_gamma_pos,
@@ -480,14 +448,12 @@ def main() -> None:
         pin_memory=device.type == "cuda",
     )
 
-    model = PureMLPCooccurrence(
+    model = PureMLP(
         group_dims=group_dims,
         num_classes=labels.shape[1],
         hidden_dims=config.hidden_dims,
         dropout=config.dropout,
         activation=config.activation,
-        adjacency=cooc_adjacency,
-        lambda_cooc=config.lambda_cooc,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     criterion = AsymmetricLossWithLogits(
@@ -498,10 +464,10 @@ def main() -> None:
 
     best_map = -1.0
     history: list[dict[str, float]] = []
-    checkpoint_path = args.output_dir / "mlp_asl_cooccurrence_visual_best.pt"
+    checkpoint_path = args.output_dir / "mlp_asl_visual_clean_best.pt"
 
     print("\n" + "=" * 64)
-    print("Training: Visual-only Pure MLP + ASL + Co-occurrence")
+    print("Training: Visual-only Pure MLP + ASL")
     print("=" * 64)
     print("Alignment metadata:")
     print(json.dumps(alignment_metadata, indent=2))
@@ -515,11 +481,6 @@ def main() -> None:
         "Loss: AsymmetricLossWithLogits "
         f"(gamma_neg={config.asl_gamma_neg}, gamma_pos={config.asl_gamma_pos}, clip={config.asl_clip})"
     )
-    print(
-        f"Co-occurrence threshold={config.cooc_threshold}, "
-        f"nonzero={cooc_stats['nonzero_entries']}/{cooc_stats['total_entries']}, "
-        f"lambda_init={config.lambda_cooc}"
-    )
 
     for epoch in range(1, config.epochs + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
@@ -527,7 +488,6 @@ def main() -> None:
         row = {
             "epoch": epoch,
             "train_loss": float(train_loss),
-            "lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
             **{f"val_{key}": value for key, value in val_metrics.items()},
         }
         history.append(row)
@@ -544,7 +504,6 @@ def main() -> None:
                     "num_classes": labels.shape[1],
                     "best_val_metrics": val_metrics,
                     "split": split_stats,
-                    "cooccurrence": cooc_stats,
                     "asl_loss": asl_stats,
                     "alignment_metadata": alignment_metadata,
                 },
@@ -556,8 +515,7 @@ def main() -> None:
             f"loss={train_loss:.4f} "
             f"val_mAP={val_metrics['mAP']:.4f} "
             f"val_micro_f1={val_metrics['micro_f1']:.4f} "
-            f"val_macro_f1={val_metrics['macro_f1']:.4f} "
-            f"lambda_cooc={float(model.lambda_cooc.detach().cpu().item()):.4f}"
+            f"val_macro_f1={val_metrics['macro_f1']:.4f}"
         )
 
     checkpoint = load_checkpoint(checkpoint_path, device)
@@ -578,11 +536,9 @@ def main() -> None:
             "official_image_list": str(args.official_image_list),
             "alignment_metadata": alignment_metadata,
             "split": split_stats,
-            "cooccurrence": cooc_stats,
             "asl_loss": asl_stats,
             "loss": "AsymmetricLossWithLogits",
-            "model": "PureMLPCooccurrence",
-            "final_lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
+            "model": "PureMLP",
             "reported_metrics": "test_metrics.json",
         },
     )
