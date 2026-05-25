@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from sklearn.metrics import average_precision_score, f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
@@ -22,7 +23,7 @@ TRAIN_VISUAL_FEATURE_PATHS = [
     Path("Extracted_Features/Normalized_EDH.npy"),
     Path("Extracted_Features/Normalized_WT.npy"),
 ]
-GROUP_NAMES = ["bow", "ch", "cm55", "corr", "edh", "wt", "semantic_tag_no_overlap"]
+GROUP_NAMES = ["bow", "ch", "cm55", "corr", "edh", "wt"]
 
 
 @dataclass
@@ -40,6 +41,8 @@ class TrainConfig:
     random_seed: int = 42
     cooc_threshold: float = 0.2
     lambda_cooc: float = 0.5
+    focal_gamma: float = 2.0
+    focal_class_weight: bool = True
     max_train_samples: int | None = None
 
 
@@ -91,6 +94,43 @@ class PureMLPCooccurrence(nn.Module):
         return logits, raw_logits
 
 
+class MultiLabelFocalLossWithLogits(nn.Module):
+    def __init__(
+        self,
+        gamma: float = 2.0,
+        positive_rates: torch.Tensor | None = None,
+        use_class_weight: bool = True,
+        reduction: str = "mean",
+    ):
+        super().__init__()
+        self.gamma = gamma
+        self.use_class_weight = use_class_weight
+        self.reduction = reduction
+        if positive_rates is None:
+            positive_rates = torch.empty(0, dtype=torch.float32)
+        self.register_buffer("positive_rates", positive_rates.float())
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+        probs = torch.sigmoid(logits)
+        pt = targets * probs + (1.0 - targets) * (1.0 - probs)
+        focal_weight = (1.0 - pt).clamp(min=0.0, max=1.0).pow(self.gamma)
+        loss = focal_weight * bce
+
+        if self.use_class_weight and self.positive_rates.numel() > 0:
+            rates = self.positive_rates.to(logits.device).view(1, -1).clamp(0.0, 1.0)
+            class_weight = torch.exp(targets * (1.0 - rates) + (1.0 - targets) * rates)
+            loss = class_weight * loss
+
+        if self.reduction == "mean":
+            return loss.mean()
+        if self.reduction == "sum":
+            return loss.sum()
+        if self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction: {self.reduction}")
+
+
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -138,58 +178,6 @@ def load_array(path: Path) -> np.ndarray:
     return np.loadtxt(path).astype(np.float32)
 
 
-def load_text_lines(path: Path) -> list[str]:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing file: {path.resolve()}")
-    return path.read_text(encoding="utf-8").splitlines()
-
-
-def normalize_name(path: str) -> str:
-    return Path(path.replace("\\", "/")).name.lower()
-
-
-def read_image_names(path: Path) -> list[str]:
-    return [normalize_name(line.strip()) for line in load_text_lines(path) if line.strip()]
-
-
-def load_label_names(path: Path) -> list[str]:
-    return [line.strip().lower() for line in load_text_lines(path) if line.strip()]
-
-
-def build_overlap_indices(tag_names: list[str], label_names: list[str]) -> tuple[list[str], list[int]]:
-    overlap_labels: list[str] = []
-    overlap_indices: list[int] = []
-    label_set = set(label_names)
-    for idx, tag in enumerate(tag_names):
-        if tag in label_set:
-            overlap_labels.append(tag)
-            overlap_indices.append(idx)
-    return overlap_labels, overlap_indices
-
-
-def get_overlap_from_config(
-    reference_config: dict[str, object],
-    data_root: Path,
-    tag_list_path: Path,
-    label_names_path: Path,
-) -> tuple[list[str], list[int]]:
-    tag_metadata = reference_config.get("tag_metadata", {})
-    if isinstance(tag_metadata, dict) and "overlap_indices" in tag_metadata:
-        overlap_labels = tag_metadata.get("overlap_labels", [])
-        labels = [str(label) for label in overlap_labels] if isinstance(overlap_labels, list) else []
-        return labels, [int(idx) for idx in tag_metadata["overlap_indices"]]
-
-    tag_names = load_label_names(data_root / tag_list_path)
-    label_names = load_label_names(data_root / label_names_path)
-    return build_overlap_indices(tag_names, label_names)
-
-
-def clean_tag_matrix(tag_matrix: np.ndarray, overlap_indices: list[int]) -> np.ndarray:
-    if not overlap_indices:
-        return tag_matrix.astype(np.float32, copy=False)
-    return np.delete(tag_matrix, overlap_indices, axis=1).astype(np.float32, copy=False)
-
-
 def load_visual_groups(data_root: Path, visual_paths: list[Path]) -> list[np.ndarray]:
     arrays = [load_array(data_root / path) for path in visual_paths]
     n_rows = {array.shape[0] for array in arrays}
@@ -203,49 +191,6 @@ def load_visual_groups(data_root: Path, visual_paths: list[Path]) -> list[np.nda
     return arrays
 
 
-def build_aligned_no_overlap_tags(
-    data_root: Path,
-    train_tag_path: Path,
-    local_image_list: Path,
-    official_image_list: Path,
-    overlap_indices: list[int],
-) -> tuple[np.ndarray, np.ndarray, dict[str, object], dict[str, object]]:
-    local_names = read_image_names(local_image_list)
-    official_names = read_image_names(official_image_list)
-    official_index = {name: idx for idx, name in enumerate(official_names)}
-
-    official_tags = load_array(data_root / train_tag_path)
-    clean_tags = clean_tag_matrix(official_tags, overlap_indices)
-
-    aligned_tags = np.zeros((len(local_names), clean_tags.shape[1]), dtype=np.float32)
-    matched_indices: list[int] = []
-    missing = 0
-    for local_idx, name in enumerate(local_names):
-        official_idx = official_index.get(name)
-        if official_idx is None:
-            missing += 1
-            continue
-        aligned_tags[local_idx] = clean_tags[official_idx]
-        matched_indices.append(local_idx)
-
-    matched_indices_array = np.asarray(matched_indices, dtype=np.int64)
-    tag_metadata = {
-        "tag_path": str(train_tag_path),
-        "original_shape": list(official_tags.shape),
-        "clean_shape": list(clean_tags.shape),
-        "num_overlap": len(overlap_indices),
-        "overlap_indices": overlap_indices,
-    }
-    alignment_metadata = {
-        "local_images": len(local_names),
-        "official_train_images": len(official_names),
-        "matched": int(len(matched_indices_array)),
-        "missing": int(missing),
-        "match_ratio": float(len(matched_indices_array) / max(len(local_names), 1)),
-    }
-    return aligned_tags, matched_indices_array, tag_metadata, alignment_metadata
-
-
 def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float) -> torch.Tensor:
     cooc = label_matrix.T @ label_matrix
     diag = cooc.diagonal().clip(min=1.0)
@@ -255,6 +200,11 @@ def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float) -> tor
     row_sum = adjacency.sum(axis=1, keepdims=True).clip(min=1.0)
     adjacency = adjacency / row_sum
     return torch.from_numpy(adjacency.astype(np.float32))
+
+
+def build_label_positive_rates(label_matrix: np.ndarray) -> torch.Tensor:
+    rates = label_matrix.mean(axis=0).astype(np.float32)
+    return torch.from_numpy(rates)
 
 
 def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[np.ndarray]:
@@ -335,36 +285,11 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     default_hidden_dim = int(reference_config.get("hidden_dim", 512))
     default_num_layers = int(reference_config.get("num_blocks", 4))
     parser = argparse.ArgumentParser(
-        description="Train no-overlap semantic-tag Pure MLP + BCE + co-occurrence."
+        description="Train visual-only Pure MLP + multilabel focal loss + co-occurrence."
     )
     parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
-    parser.add_argument("--output-dir", type=Path, default=Path("07_Pure_MLP_Concat_BCE/mlp_bce_cooccurrence_runs"))
-    parser.add_argument(
-        "--local-image-list",
-        type=Path,
-        default=Path(str(reference_config.get("local_image_list", "database_img.txt"))),
-    )
-    parser.add_argument(
-        "--official-image-list",
-        type=Path,
-        default=Path(str(reference_config.get("official_image_list", "TrainImagelist.txt"))),
-    )
-    parser.add_argument(
-        "--train-tag-path",
-        type=Path,
-        default=Path(str(reference_config.get("train_tag_path", "NUS_WID_Tags/Train_Tags1k.dat"))),
-    )
-    parser.add_argument(
-        "--tag-list-path",
-        type=Path,
-        default=Path(str(reference_config.get("tag_list_path", "NUS_WID_Tags/TagList1k.txt"))),
-    )
-    parser.add_argument(
-        "--label-names-path",
-        type=Path,
-        default=Path(str(reference_config.get("label_names_path", "NUS-WIDE/NUS-WIDE/ConceptsList/Concepts81.txt"))),
-    )
+    parser.add_argument("--output-dir", type=Path, default=Path("21/mlp_focal_visual_cooccurrence_runs"))
     parser.add_argument("--epochs", type=int, default=int(reference_config.get("epochs", 50)))
     parser.add_argument("--batch-size", type=int, default=int(reference_config.get("batch_size", 128)))
     parser.add_argument("--lr", type=float, default=float(reference_config.get("lr", 1e-3)))
@@ -381,6 +306,14 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--cooc-threshold", type=float, default=0.2)
     parser.add_argument("--lambda-cooc", type=float, default=0.5)
+    parser.add_argument("--focal-gamma", type=float, default=2.0)
+    parser.add_argument(
+        "--no-focal-class-weight",
+        action="store_false",
+        dest="focal_class_weight",
+        help="Disable the paper-style positive-rate class weighting term.",
+    )
+    parser.set_defaults(focal_class_weight=True)
     parser.add_argument("--max-train-samples", type=int, default=reference_config.get("max_train_samples"))
     return parser
 
@@ -410,6 +343,8 @@ def main() -> None:
         random_seed=args.seed,
         cooc_threshold=args.cooc_threshold,
         lambda_cooc=args.lambda_cooc,
+        focal_gamma=args.focal_gamma,
+        focal_class_weight=args.focal_class_weight,
         max_train_samples=args.max_train_samples,
     )
     if config.epochs < 1:
@@ -431,44 +366,22 @@ def main() -> None:
 
     print(f"Using device: {device}")
     print(f"Reference config: {args.config_path}")
-    print("Loading no-overlap aligned views using experiment-20 settings...")
-
-    overlap_labels, overlap_indices = get_overlap_from_config(
-        reference_config=reference_config,
-        data_root=args.data_root,
-        tag_list_path=args.tag_list_path,
-        label_names_path=args.label_names_path,
-    )
-    aligned_tags, matched_indices_array, tag_metadata, alignment_metadata = build_aligned_no_overlap_tags(
-        data_root=args.data_root,
-        train_tag_path=args.train_tag_path,
-        local_image_list=args.local_image_list,
-        official_image_list=args.official_image_list,
-        overlap_indices=overlap_indices,
-    )
-    tag_metadata["overlap_labels"] = overlap_labels
-
-    cache_dir = args.output_dir / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    np.save(cache_dir / "aligned_tag_feature_no_overlap.npy", aligned_tags)
-    np.save(cache_dir / "matched_indices_no_overlap.npy", matched_indices_array)
-    save_json(cache_dir / "alignment_metadata.json", alignment_metadata)
-    save_json(cache_dir / "tag_metadata.json", tag_metadata)
+    print("Loading visual-only views using experiment-07 baseline inputs...")
 
     feature_groups = load_visual_groups(args.data_root, TRAIN_VISUAL_FEATURE_PATHS)
     labels = load_array(args.data_root / "database_labels_81_big.npy")
-    feature_groups = [features[matched_indices_array] for features in feature_groups]
-    labels = labels[matched_indices_array]
-    tags = aligned_tags[matched_indices_array]
+    feature_rows = {features.shape[0] for features in feature_groups}
+    if len(feature_rows) != 1 or labels.shape[0] not in feature_rows:
+        raise ValueError(
+            "Visual features and labels must have matching rows: "
+            f"features={sorted(feature_rows)}, labels={labels.shape[0]}"
+        )
 
     if config.max_train_samples is not None:
         keep = min(config.max_train_samples, len(labels))
         feature_groups = [features[:keep] for features in feature_groups]
         labels = labels[:keep]
-        tags = tags[:keep]
-        matched_indices_array = matched_indices_array[:keep]
 
-    feature_groups.append(tags)
     group_dims = [features.shape[1] for features in feature_groups]
 
     all_indices = np.arange(len(labels))
@@ -494,12 +407,20 @@ def main() -> None:
         "val_samples": int(len(idx_val)),
     }
     cooc_adjacency = build_cooccurrence_matrix(labels[idx_train], threshold=config.cooc_threshold)
+    positive_rates = build_label_positive_rates(labels[idx_train])
     cooc_stats = {
         "shape": list(cooc_adjacency.shape),
         "nonzero_entries": int((cooc_adjacency > 0).sum().item()),
         "total_entries": int(cooc_adjacency.numel()),
         "threshold": config.cooc_threshold,
         "lambda_init": config.lambda_cooc,
+    }
+    focal_stats = {
+        "gamma": config.focal_gamma,
+        "class_weight": config.focal_class_weight,
+        "positive_rate_min": float(positive_rates.min().item()),
+        "positive_rate_max": float(positive_rates.max().item()),
+        "positive_rate_mean": float(positive_rates.mean().item()),
     }
 
     train_loader = DataLoader(
@@ -534,16 +455,20 @@ def main() -> None:
         lambda_cooc=config.lambda_cooc,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = MultiLabelFocalLossWithLogits(
+        gamma=config.focal_gamma,
+        positive_rates=positive_rates,
+        use_class_weight=config.focal_class_weight,
+    )
 
     best_map = -1.0
     history: list[dict[str, float]] = []
-    checkpoint_path = args.output_dir / "mlp_bce_cooccurrence_no_overlap_best.pt"
+    checkpoint_path = args.output_dir / "mlp_focal_cooccurrence_visual_best.pt"
 
     print("\n" + "=" * 64)
-    print("Training: Pure MLP + BCE + Co-occurrence (Experiment-20 no-overlap data)")
+    print("Training: Visual-only Pure MLP + Multi-label Focal Loss + Co-occurrence")
     print("=" * 64)
-    print(f"Matched samples: {len(matched_indices_array)}")
+    print(f"Samples: {len(labels)}")
     print(
         f"Split ratio: train={split_stats['train_ratio']:.2f} | "
         f"test={split_stats['test_ratio']:.2f} | val={split_stats['val_ratio']:.2f}"
@@ -552,7 +477,10 @@ def main() -> None:
     print(f"Group names: {GROUP_NAMES}")
     print(f"Group dims: {group_dims} | Input dim: {sum(group_dims)} | Classes: {labels.shape[1]}")
     print(f"MLP hidden_dims={config.hidden_dims}, activation={config.activation}, dropout={config.dropout}")
-    print(f"Loss: BCEWithLogitsLoss")
+    print(
+        "Loss: MultiLabelFocalLossWithLogits "
+        f"(gamma={config.focal_gamma}, class_weight={config.focal_class_weight})"
+    )
     print(
         f"Co-occurrence threshold={config.cooc_threshold}, "
         f"nonzero={cooc_stats['nonzero_entries']}/{cooc_stats['total_entries']}, "
@@ -582,9 +510,8 @@ def main() -> None:
                     "num_classes": labels.shape[1],
                     "best_val_metrics": val_metrics,
                     "split": split_stats,
-                    "tag_metadata": tag_metadata,
-                    "alignment_metadata": alignment_metadata,
                     "cooccurrence": cooc_stats,
+                    "focal_loss": focal_stats,
                 },
                 checkpoint_path,
             )
@@ -600,6 +527,7 @@ def main() -> None:
 
     checkpoint = load_checkpoint(checkpoint_path, device)
     model.load_state_dict(checkpoint["model_state_dict"])
+    final_val_metrics = evaluate(model, val_loader, device, config.threshold)
     final_test_metrics = evaluate(model, test_loader, device, config.threshold)
 
     save_json(args.output_dir / "training_history.json", history)
@@ -609,18 +537,13 @@ def main() -> None:
         {
             **asdict(config),
             "reference_config_path": str(args.config_path),
-            "local_image_list": str(args.local_image_list),
-            "official_image_list": str(args.official_image_list),
-            "train_tag_path": str(args.train_tag_path),
-            "tag_list_path": str(args.tag_list_path),
-            "label_names_path": str(args.label_names_path),
             "group_names": GROUP_NAMES,
             "group_dims": group_dims,
+            "train_feature_paths": [str(path) for path in TRAIN_VISUAL_FEATURE_PATHS],
             "split": split_stats,
-            "tag_metadata": tag_metadata,
-            "alignment_metadata": alignment_metadata,
             "cooccurrence": cooc_stats,
-            "loss": "BCEWithLogitsLoss",
+            "focal_loss": focal_stats,
+            "loss": "MultiLabelFocalLossWithLogits",
             "model": "PureMLPCooccurrence",
             "final_lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
             "reported_metrics": "test_metrics.json",
