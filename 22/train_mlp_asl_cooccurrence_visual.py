@@ -9,7 +9,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from sklearn.metrics import average_precision_score, f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
@@ -41,8 +40,9 @@ class TrainConfig:
     random_seed: int = 42
     cooc_threshold: float = 0.2
     lambda_cooc: float = 0.5
-    focal_gamma: float = 2.0
-    focal_class_weight: bool = True
+    asl_gamma_neg: float = 4.0
+    asl_gamma_pos: float = 1.0
+    asl_clip: float = 0.05
     max_train_samples: int | None = None
 
 
@@ -94,41 +94,33 @@ class PureMLPCooccurrence(nn.Module):
         return logits, raw_logits
 
 
-class MultiLabelFocalLossWithLogits(nn.Module):
+class AsymmetricLossWithLogits(nn.Module):
     def __init__(
         self,
-        gamma: float = 2.0,
-        positive_rates: torch.Tensor | None = None,
-        use_class_weight: bool = True,
-        reduction: str = "mean",
+        gamma_neg: float = 4.0,
+        gamma_pos: float = 1.0,
+        clip: float = 0.05,
+        eps: float = 1e-8,
     ):
         super().__init__()
-        self.gamma = gamma
-        self.use_class_weight = use_class_weight
-        self.reduction = reduction
-        if positive_rates is None:
-            positive_rates = torch.empty(0, dtype=torch.float32)
-        self.register_buffer("positive_rates", positive_rates.float())
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.clip = clip
+        self.eps = eps
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         probs = torch.sigmoid(logits)
-        pt = targets * probs + (1.0 - targets) * (1.0 - probs)
-        focal_weight = (1.0 - pt).clamp(min=0.0, max=1.0).pow(self.gamma)
-        loss = focal_weight * bce
+        pos_probs = probs
+        neg_probs = 1.0 - probs
 
-        if self.use_class_weight and self.positive_rates.numel() > 0:
-            rates = self.positive_rates.to(logits.device).view(1, -1).clamp(0.0, 1.0)
-            class_weight = torch.exp(targets * (1.0 - rates) + (1.0 - targets) * rates)
-            loss = class_weight * loss
+        if self.clip is not None and self.clip > 0:
+            neg_probs = (neg_probs + self.clip).clamp(max=1.0)
 
-        if self.reduction == "mean":
-            return loss.mean()
-        if self.reduction == "sum":
-            return loss.sum()
-        if self.reduction == "none":
-            return loss
-        raise ValueError(f"Unsupported reduction: {self.reduction}")
+        pos_loss = targets * torch.log(pos_probs.clamp(min=self.eps))
+        neg_loss = (1.0 - targets) * torch.log(neg_probs.clamp(min=self.eps))
+        pos_weight = torch.pow(1.0 - pos_probs, self.gamma_pos)
+        neg_weight = torch.pow(1.0 - neg_probs, self.gamma_neg)
+        return -(pos_weight * pos_loss + neg_weight * neg_loss).mean()
 
 
 def set_seed(seed: int) -> None:
@@ -200,11 +192,6 @@ def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float) -> tor
     row_sum = adjacency.sum(axis=1, keepdims=True).clip(min=1.0)
     adjacency = adjacency / row_sum
     return torch.from_numpy(adjacency.astype(np.float32))
-
-
-def build_label_positive_rates(label_matrix: np.ndarray) -> torch.Tensor:
-    rates = label_matrix.mean(axis=0).astype(np.float32)
-    return torch.from_numpy(rates)
 
 
 def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[np.ndarray]:
@@ -285,11 +272,11 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     default_hidden_dim = int(reference_config.get("hidden_dim", 512))
     default_num_layers = int(reference_config.get("num_blocks", 4))
     parser = argparse.ArgumentParser(
-        description="Train visual-only Pure MLP + multilabel focal loss + co-occurrence."
+        description="Train visual-only Pure MLP + ASL + co-occurrence."
     )
     parser.add_argument("--config-path", type=Path, default=Path("20/config.json"))
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
-    parser.add_argument("--output-dir", type=Path, default=Path("21/mlp_focal_visual_cooccurrence_runs"))
+    parser.add_argument("--output-dir", type=Path, default=Path("22/mlp_asl_visual_cooccurrence_runs"))
     parser.add_argument("--epochs", type=int, default=int(reference_config.get("epochs", 50)))
     parser.add_argument("--batch-size", type=int, default=int(reference_config.get("batch_size", 128)))
     parser.add_argument("--lr", type=float, default=float(reference_config.get("lr", 1e-3)))
@@ -306,14 +293,9 @@ def make_parser(reference_config: dict[str, object]) -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--cooc-threshold", type=float, default=0.2)
     parser.add_argument("--lambda-cooc", type=float, default=0.5)
-    parser.add_argument("--focal-gamma", type=float, default=2.0)
-    parser.add_argument(
-        "--no-focal-class-weight",
-        action="store_false",
-        dest="focal_class_weight",
-        help="Disable the paper-style positive-rate class weighting term.",
-    )
-    parser.set_defaults(focal_class_weight=True)
+    parser.add_argument("--asl-gamma-neg", type=float, default=float(reference_config.get("asl_gamma_neg", 4.0)))
+    parser.add_argument("--asl-gamma-pos", type=float, default=float(reference_config.get("asl_gamma_pos", 1.0)))
+    parser.add_argument("--asl-clip", type=float, default=float(reference_config.get("asl_clip", 0.05)))
     parser.add_argument("--max-train-samples", type=int, default=reference_config.get("max_train_samples"))
     return parser
 
@@ -343,8 +325,9 @@ def main() -> None:
         random_seed=args.seed,
         cooc_threshold=args.cooc_threshold,
         lambda_cooc=args.lambda_cooc,
-        focal_gamma=args.focal_gamma,
-        focal_class_weight=args.focal_class_weight,
+        asl_gamma_neg=args.asl_gamma_neg,
+        asl_gamma_pos=args.asl_gamma_pos,
+        asl_clip=args.asl_clip,
         max_train_samples=args.max_train_samples,
     )
     if config.epochs < 1:
@@ -407,7 +390,6 @@ def main() -> None:
         "val_samples": int(len(idx_val)),
     }
     cooc_adjacency = build_cooccurrence_matrix(labels[idx_train], threshold=config.cooc_threshold)
-    positive_rates = build_label_positive_rates(labels[idx_train])
     cooc_stats = {
         "shape": list(cooc_adjacency.shape),
         "nonzero_entries": int((cooc_adjacency > 0).sum().item()),
@@ -415,12 +397,10 @@ def main() -> None:
         "threshold": config.cooc_threshold,
         "lambda_init": config.lambda_cooc,
     }
-    focal_stats = {
-        "gamma": config.focal_gamma,
-        "class_weight": config.focal_class_weight,
-        "positive_rate_min": float(positive_rates.min().item()),
-        "positive_rate_max": float(positive_rates.max().item()),
-        "positive_rate_mean": float(positive_rates.mean().item()),
+    asl_stats = {
+        "gamma_neg": config.asl_gamma_neg,
+        "gamma_pos": config.asl_gamma_pos,
+        "clip": config.asl_clip,
     }
 
     train_loader = DataLoader(
@@ -455,18 +435,18 @@ def main() -> None:
         lambda_cooc=config.lambda_cooc,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    criterion = MultiLabelFocalLossWithLogits(
-        gamma=config.focal_gamma,
-        positive_rates=positive_rates,
-        use_class_weight=config.focal_class_weight,
+    criterion = AsymmetricLossWithLogits(
+        gamma_neg=config.asl_gamma_neg,
+        gamma_pos=config.asl_gamma_pos,
+        clip=config.asl_clip,
     )
 
     best_map = -1.0
     history: list[dict[str, float]] = []
-    checkpoint_path = args.output_dir / "mlp_focal_cooccurrence_visual_best.pt"
+    checkpoint_path = args.output_dir / "mlp_asl_cooccurrence_visual_best.pt"
 
     print("\n" + "=" * 64)
-    print("Training: Visual-only Pure MLP + Multi-label Focal Loss + Co-occurrence")
+    print("Training: Visual-only Pure MLP + ASL + Co-occurrence")
     print("=" * 64)
     print(f"Samples: {len(labels)}")
     print(f"Test ratio: {split_stats['test_ratio']:.2f}")
@@ -475,8 +455,8 @@ def main() -> None:
     print(f"Group dims: {group_dims} | Input dim: {sum(group_dims)} | Classes: {labels.shape[1]}")
     print(f"MLP hidden_dims={config.hidden_dims}, activation={config.activation}, dropout={config.dropout}")
     print(
-        "Loss: MultiLabelFocalLossWithLogits "
-        f"(gamma={config.focal_gamma}, class_weight={config.focal_class_weight})"
+        "Loss: AsymmetricLossWithLogits "
+        f"(gamma_neg={config.asl_gamma_neg}, gamma_pos={config.asl_gamma_pos}, clip={config.asl_clip})"
     )
     print(
         f"Co-occurrence threshold={config.cooc_threshold}, "
@@ -491,6 +471,7 @@ def main() -> None:
             "epoch": epoch,
             "train_loss": float(train_loss),
             "lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
+            **{f"val_{key}": value for key, value in val_metrics.items()},
         }
         history.append(row)
 
@@ -507,7 +488,7 @@ def main() -> None:
                     "best_val_metrics": val_metrics,
                     "split": split_stats,
                     "cooccurrence": cooc_stats,
-                    "focal_loss": focal_stats,
+                    "asl_loss": asl_stats,
                 },
                 checkpoint_path,
             )
@@ -515,6 +496,9 @@ def main() -> None:
         print(
             f"Epoch {epoch:03d}/{config.epochs} "
             f"loss={train_loss:.4f} "
+            f"val_mAP={val_metrics['mAP']:.4f} "
+            f"val_micro_f1={val_metrics['micro_f1']:.4f} "
+            f"val_macro_f1={val_metrics['macro_f1']:.4f} "
             f"lambda_cooc={float(model.lambda_cooc.detach().cpu().item()):.4f}"
         )
 
@@ -534,8 +518,8 @@ def main() -> None:
             "train_feature_paths": [str(path) for path in TRAIN_VISUAL_FEATURE_PATHS],
             "split": split_stats,
             "cooccurrence": cooc_stats,
-            "focal_loss": focal_stats,
-            "loss": "MultiLabelFocalLossWithLogits",
+            "asl_loss": asl_stats,
+            "loss": "AsymmetricLossWithLogits",
             "model": "PureMLPCooccurrence",
             "final_lambda_cooc": float(model.lambda_cooc.detach().cpu().item()),
             "reported_metrics": "test_metrics.json",

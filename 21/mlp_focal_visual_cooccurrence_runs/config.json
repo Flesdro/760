@@ -1,0 +1,77 @@
+{
+  "batch_size": 128,
+  "epochs": 50,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "hidden_dims": [
+    512,
+    512,
+    512,
+    512
+  ],
+  "dropout": 0.3,
+  "activation": "gelu",
+  "val_ratio": 0.1,
+  "test_ratio": 0.1,
+  "threshold": 0.5,
+  "random_seed": 42,
+  "cooc_threshold": 0.2,
+  "lambda_cooc": 0.5,
+  "focal_gamma": 2.0,
+  "focal_class_weight": true,
+  "max_train_samples": null,
+  "reference_config_path": "20/config.json",
+  "group_names": [
+    "bow",
+    "ch",
+    "cm55",
+    "corr",
+    "edh",
+    "wt"
+  ],
+  "group_dims": [
+    500,
+    64,
+    225,
+    144,
+    73,
+    128
+  ],
+  "train_feature_paths": [
+    "Extracted_Features/BoW_int.npy",
+    "Extracted_Features/Normalized_CH.npy",
+    "Extracted_Features/Normalized_CM55.npy",
+    "Extracted_Features/Normalized_CORR.npy",
+    "Extracted_Features/Normalized_EDH.npy",
+    "Extracted_Features/Normalized_WT.npy"
+  ],
+  "split": {
+    "train_ratio": 0.8,
+    "test_ratio": 0.1,
+    "val_ratio": 0.1,
+    "train_samples": 154986,
+    "test_samples": 19374,
+    "val_samples": 19374
+  },
+  "cooccurrence": {
+    "shape": [
+      81,
+      81
+    ],
+    "nonzero_entries": 355,
+    "total_entries": 6561,
+    "threshold": 0.2,
+    "lambda_init": 0.5
+  },
+  "focal_loss": {
+    "gamma": 2.0,
+    "class_weight": true,
+    "positive_rate_min": 1.9356586562935263e-05,
+    "positive_rate_max": 0.37724053859710693,
+    "positive_rate_mean": 0.030680427327752113
+  },
+  "loss": "MultiLabelFocalLossWithLogits",
+  "model": "PureMLPCooccurrence",
+  "final_lambda_cooc": -0.036671318113803864,
+  "reported_metrics": "test_metrics.json"
+}
