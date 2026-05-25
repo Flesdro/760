@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from sklearn.metrics import average_precision_score, f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
@@ -39,9 +40,8 @@ class TrainConfig:
     test_ratio: float = 0.1
     threshold: float = 0.5
     random_seed: int = 42
-    asl_gamma_neg: float = 4.0
-    asl_gamma_pos: float = 1.0
-    asl_clip: float = 0.05
+    focal_gamma: float = 2.0
+    focal_class_weight: bool = True
     cooc_threshold: float = 0.2
     cooc_alpha: float = 0.2
     max_train_samples: int | None = None
@@ -140,33 +140,41 @@ class GatedFusionResidualMLP(nn.Module):
         return logits, gate_weights
 
 
-class AsymmetricLossWithLogits(nn.Module):
+class MultiLabelFocalLossWithLogits(nn.Module):
     def __init__(
         self,
-        gamma_neg: float = 4.0,
-        gamma_pos: float = 1.0,
-        clip: float = 0.05,
-        eps: float = 1e-8,
+        gamma: float = 2.0,
+        positive_rates: torch.Tensor | None = None,
+        use_class_weight: bool = True,
+        reduction: str = "mean",
     ):
         super().__init__()
-        self.gamma_neg = gamma_neg
-        self.gamma_pos = gamma_pos
-        self.clip = clip
-        self.eps = eps
+        self.gamma = gamma
+        self.use_class_weight = use_class_weight
+        self.reduction = reduction
+        if positive_rates is None:
+            positive_rates = torch.empty(0, dtype=torch.float32)
+        self.register_buffer("positive_rates", positive_rates.float())
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         probs = torch.sigmoid(logits)
-        pos_probs = probs
-        neg_probs = 1.0 - probs
+        pt = targets * probs + (1.0 - targets) * (1.0 - probs)
+        focal_weight = (1.0 - pt).clamp(min=0.0, max=1.0).pow(self.gamma)
+        loss = focal_weight * bce
 
-        if self.clip is not None and self.clip > 0:
-            neg_probs = (neg_probs + self.clip).clamp(max=1.0)
+        if self.use_class_weight and self.positive_rates.numel() > 0:
+            rates = self.positive_rates.to(logits.device).view(1, -1).clamp(0.0, 1.0)
+            class_weight = torch.exp(targets * (1.0 - rates) + (1.0 - targets) * rates)
+            loss = class_weight * loss
 
-        pos_loss = targets * torch.log(pos_probs.clamp(min=self.eps))
-        neg_loss = (1.0 - targets) * torch.log(neg_probs.clamp(min=self.eps))
-        pos_weight = torch.pow(1.0 - pos_probs, self.gamma_pos)
-        neg_weight = torch.pow(1.0 - neg_probs, self.gamma_neg)
-        return -(pos_weight * pos_loss + neg_weight * neg_loss).mean()
+        if self.reduction == "mean":
+            return loss.mean()
+        if self.reduction == "sum":
+            return loss.sum()
+        if self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction: {self.reduction}")
 
 
 def build_cooccurrence_matrix(label_matrix: np.ndarray, threshold: float = 0.2) -> torch.Tensor:
@@ -391,6 +399,11 @@ def select_rows(feature_groups: list[np.ndarray], indices: np.ndarray) -> list[n
     return [features[indices] for features in feature_groups]
 
 
+def build_label_positive_rates(label_matrix: np.ndarray) -> torch.Tensor:
+    rates = label_matrix.mean(axis=0).astype(np.float32)
+    return torch.from_numpy(rates)
+
+
 def trim_to_match(features: np.ndarray, labels: np.ndarray, name: str) -> tuple[np.ndarray, np.ndarray]:
     if features.shape[0] == labels.shape[0]:
         return features, labels
@@ -489,13 +502,16 @@ def print_run_settings(args: argparse.Namespace, config: TrainConfig) -> None:
 def main() -> None:
     defaults = TrainConfig()
     parser = argparse.ArgumentParser(
-        description="Train Gated Fusion Residual MLP + ASL + cleaned no-overlap tag modality."
+        description=(
+            "Train Gated Fusion Residual MLP + multi-label focal loss + "
+            "cleaned no-overlap tag modality."
+        )
     )
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("20_train_gated_fusion_residual_mlp_asl_tag_no_overlap/runs"),
+        default=Path("23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs"),
     )
     parser.add_argument("--local-image-list", type=Path, default=Path("database_img.txt"))
     parser.add_argument("--official-image-list", type=Path, default=Path("TrainImagelist.txt"))
@@ -519,9 +535,14 @@ def main() -> None:
     parser.add_argument("--test-ratio", type=float, default=defaults.test_ratio)
     parser.add_argument("--seed", type=int, default=defaults.random_seed)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--asl-gamma-neg", type=float, default=defaults.asl_gamma_neg)
-    parser.add_argument("--asl-gamma-pos", type=float, default=defaults.asl_gamma_pos)
-    parser.add_argument("--asl-clip", type=float, default=defaults.asl_clip)
+    parser.add_argument("--focal-gamma", type=float, default=defaults.focal_gamma)
+    parser.add_argument(
+        "--no-focal-class-weight",
+        action="store_false",
+        dest="focal_class_weight",
+        help="Disable the paper-style positive-rate class weighting term.",
+    )
+    parser.set_defaults(focal_class_weight=defaults.focal_class_weight)
     parser.add_argument("--cooc-threshold", type=float, default=defaults.cooc_threshold)
     parser.add_argument("--cooc-alpha", type=float, default=defaults.cooc_alpha)
     parser.add_argument("--max-train-samples", type=int, default=None, help="Optional cap for quick smoke tests.")
@@ -540,9 +561,8 @@ def main() -> None:
         test_ratio=args.test_ratio,
         threshold=args.threshold,
         random_seed=args.seed,
-        asl_gamma_neg=args.asl_gamma_neg,
-        asl_gamma_pos=args.asl_gamma_pos,
-        asl_clip=args.asl_clip,
+        focal_gamma=args.focal_gamma,
+        focal_class_weight=args.focal_class_weight,
         cooc_threshold=args.cooc_threshold,
         cooc_alpha=args.cooc_alpha,
         max_train_samples=args.max_train_samples,
@@ -648,6 +668,14 @@ def main() -> None:
     )
     cooc_matrix = build_cooccurrence_matrix(np.asarray(labels[idx_train], dtype=np.float32), config.cooc_threshold)
     cooc_refiner = LabelCorrelationRefiner(cooc_matrix, alpha=config.cooc_alpha)
+    positive_rates = build_label_positive_rates(labels[idx_train])
+    focal_stats = {
+        "gamma": config.focal_gamma,
+        "class_weight": config.focal_class_weight,
+        "positive_rate_min": float(positive_rates.min().item()),
+        "positive_rate_max": float(positive_rates.max().item()),
+        "positive_rate_mean": float(positive_rates.mean().item()),
+    }
 
     train_loader = DataLoader(
         FeatureGroupDataset(select_rows(feature_groups, idx_train), labels[idx_train]),
@@ -682,15 +710,15 @@ def main() -> None:
         use_refiner=True,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    criterion = AsymmetricLossWithLogits(
-        gamma_neg=config.asl_gamma_neg,
-        gamma_pos=config.asl_gamma_pos,
-        clip=config.asl_clip,
+    criterion = MultiLabelFocalLossWithLogits(
+        gamma=config.focal_gamma,
+        positive_rates=positive_rates,
+        use_class_weight=config.focal_class_weight,
     )
 
     best_map = -1.0
     history: list[dict[str, float]] = []
-    checkpoint_path = args.output_dir / "gated_fusion_residual_mlp_asl_tag_no_overlap_best.pt"
+    checkpoint_path = args.output_dir / "gated_fusion_residual_mlp_focal_tag_no_overlap_best.pt"
 
     print(f"Matched samples: {len(matched_indices_array)}")
     print(f"Train samples: {len(idx_train)} | Val samples: {len(idx_val)} | Test samples: {len(idx_test)}")
@@ -701,8 +729,8 @@ def main() -> None:
         f"Hidden dim: {config.hidden_dim} | Residual blocks: {config.num_blocks}"
     )
     print(
-        f"ASL gamma_neg: {config.asl_gamma_neg} | "
-        f"gamma_pos: {config.asl_gamma_pos} | clip: {config.asl_clip}"
+        "Loss: MultiLabelFocalLossWithLogits "
+        f"(gamma={config.focal_gamma}, class_weight={config.focal_class_weight})"
     )
     print(f"Co-occurrence threshold: {config.cooc_threshold} | alpha: {config.cooc_alpha}")
     print(
@@ -732,6 +760,7 @@ def main() -> None:
                     "best_val_metrics": val_metrics,
                     "tag_metadata": tag_metadata,
                     "alignment_metadata": alignment_metadata,
+                    "focal_loss": focal_stats,
                     "cooc_metadata": {
                         "threshold": config.cooc_threshold,
                         "alpha": config.cooc_alpha,
@@ -772,6 +801,10 @@ def main() -> None:
             "group_dims": view_dims,
             "tag_metadata": tag_metadata,
             "alignment_metadata": alignment_metadata,
+            "focal_loss": focal_stats,
+            "loss": "MultiLabelFocalLossWithLogits",
+            "model": "GatedFusionResidualMLP",
+            "reported_metrics": "test_metrics.json",
             "cooc_metadata": {
                 "threshold": config.cooc_threshold,
                 "alpha": config.cooc_alpha,

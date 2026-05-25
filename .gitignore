@@ -23,3 +23,5 @@ NUS-WIDE-images
 16_ML_GCN
 17_CLIP_Finetune
 18_Text_Embed_Init
+
+__pycache__
