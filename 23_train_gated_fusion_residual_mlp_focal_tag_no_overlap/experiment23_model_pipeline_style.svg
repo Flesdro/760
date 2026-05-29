@@ -1,0 +1,214 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="840" viewBox="0 0 2000 840" role="img" aria-labelledby="title desc">
+  <title id="title">Experiment 23 Model Pipeline</title>
+  <desc id="desc">A paper-style visual pipeline for Experiment 23: no-overlap multi-view inputs, gated fusion, residual MLP, label co-occurrence refiner, and asymmetric loss.</desc>
+  <defs>
+    <style>
+      .stage { font: 500 31px Arial, Helvetica, sans-serif; fill: #000; }
+      .label { font: 700 24px Arial, Helvetica, sans-serif; fill: #000; }
+      .mid { font: 600 21px Arial, Helvetica, sans-serif; fill: #000; }
+      .small { font: 500 18px Arial, Helvetica, sans-serif; fill: #000; }
+      .tiny { font: 500 15px Arial, Helvetica, sans-serif; fill: #1b1b1b; }
+      .note { font: 500 17px Arial, Helvetica, sans-serif; fill: #333; }
+      .group { fill: none; stroke: #1d3354; stroke-width: 3; stroke-dasharray: 8 6; rx: 22; }
+      .solid { fill: #fff; stroke: #111; stroke-width: 3; rx: 2; }
+      .module { fill: #d8efc3; stroke: none; rx: 14; }
+      .soft-green { fill: #e8f6dc; stroke: #5a8d42; stroke-width: 2; rx: 4; }
+      .soft-blue { fill: #c8ddef; stroke: #386d9c; stroke-width: 2; rx: 4; }
+      .soft-red { fill: #f3cbd0; stroke: #a24a55; stroke-width: 2; rx: 4; }
+      .soft-orange { fill: #f6e0cf; stroke: none; rx: 14; }
+      .blue-arrow { fill: none; stroke: #0071bc; stroke-width: 4; marker-end: url(#blueArrow); }
+      .red-arrow { fill: none; stroke: #cf0000; stroke-width: 4; marker-end: url(#redArrow); }
+      .orange-arrow { fill: none; stroke: #ee7823; stroke-width: 4; marker-end: url(#orangeArrow); }
+      .black-line { stroke: #000; stroke-width: 3; fill: none; marker-start: url(#blackArrowStart); marker-end: url(#blackArrow); }
+      .thin-black { stroke: #000; stroke-width: 2.5; fill: none; }
+      .dash-sep { stroke: #4b5568; stroke-width: 3; stroke-dasharray: 16 12; }
+    </style>
+    <marker id="blueArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0071bc"/>
+    </marker>
+    <marker id="redArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#cf0000"/>
+    </marker>
+    <marker id="orangeArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#ee7823"/>
+    </marker>
+    <marker id="blackArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#000"/>
+    </marker>
+    <marker id="blackArrowStart" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M10,0 L0,5 L10,10 Z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect width="2000" height="840" fill="#fff"/>
+
+  <!-- Stage brackets -->
+  <path class="black-line" d="M30 38 L480 38"/>
+  <text class="stage" x="130" y="31">No-overlap inputs</text>
+  <line class="thin-black" x1="30" y1="18" x2="30" y2="58"/>
+  <line class="thin-black" x1="480" y1="18" x2="480" y2="58"/>
+
+  <path class="black-line" d="M510 38 L970 38"/>
+  <text class="stage" x="630" y="31">Gated fusion</text>
+  <line class="thin-black" x1="510" y1="18" x2="510" y2="58"/>
+  <line class="thin-black" x1="970" y1="18" x2="970" y2="58"/>
+
+  <path class="black-line" d="M1000 38 L1450 38"/>
+  <text class="stage" x="1115" y="31">Residual MLP</text>
+  <line class="thin-black" x1="1000" y1="18" x2="1000" y2="58"/>
+  <line class="thin-black" x1="1450" y1="18" x2="1450" y2="58"/>
+
+  <path class="black-line" d="M1480 38 L1970 38"/>
+  <text class="stage" x="1590" y="31">Co-occurrence + loss</text>
+  <line class="thin-black" x1="1480" y1="18" x2="1480" y2="58"/>
+  <line class="thin-black" x1="1970" y1="18" x2="1970" y2="58"/>
+
+  <!-- Stage containers -->
+  <rect class="group" x="30" y="72" width="450" height="650"/>
+  <rect class="group" x="510" y="72" width="460" height="650"/>
+  <rect class="group" x="1000" y="72" width="450" height="650"/>
+  <rect class="group" x="1480" y="72" width="490" height="650"/>
+
+  <!-- Inputs -->
+  <rect class="module" x="72" y="105" width="360" height="82"/>
+  <text class="label" x="105" y="140">Clean semantic tag view</text>
+  <text class="tiny" x="118" y="168">1K tags - 75 overlaps = 925 dims</text>
+
+  <rect class="soft-blue" x="70" y="225" width="95" height="54"/>
+  <text class="small" x="96" y="257">BoW</text>
+  <text class="tiny" x="103" y="274">500</text>
+  <rect class="solid" x="175" y="225" width="78" height="54"/>
+  <text class="small" x="201" y="257">CH</text>
+  <text class="tiny" x="206" y="274">64</text>
+  <rect class="solid" x="263" y="225" width="90" height="54"/>
+  <text class="small" x="285" y="257">CM55</text>
+  <text class="tiny" x="298" y="274">225</text>
+  <rect class="solid" x="363" y="225" width="82" height="54"/>
+  <text class="small" x="381" y="257">CORR</text>
+  <text class="tiny" x="394" y="274">144</text>
+
+  <rect class="solid" x="110" y="300" width="90" height="54"/>
+  <text class="small" x="132" y="332">EDH</text>
+  <text class="tiny" x="147" y="349">73</text>
+  <rect class="solid" x="215" y="300" width="82" height="54"/>
+  <text class="small" x="237" y="332">WT</text>
+  <text class="tiny" x="247" y="349">128</text>
+  <rect class="soft-green" x="312" y="300" width="110" height="54"/>
+  <text class="small" x="346" y="332">TAG</text>
+  <text class="tiny" x="356" y="349">925</text>
+
+  <rect class="soft-green" x="88" y="430" width="320" height="74"/>
+  <text class="label" x="126" y="464">Aligned 7 feature groups</text>
+  <text class="tiny" x="142" y="490">matched samples: 116,127</text>
+  <path class="blue-arrow" d="M248 354 L248 424"/>
+
+  <rect class="soft-orange" x="98" y="570" width="300" height="86"/>
+  <text class="mid" x="132" y="604">Targets: 81 labels</text>
+  <text class="tiny" x="126" y="632">used for ASL and co-occurrence</text>
+
+  <!-- Gated fusion -->
+  <rect class="module" x="555" y="105" width="360" height="80"/>
+  <text class="label" x="612" y="140">Group encoders</text>
+  <text class="tiny" x="592" y="166">Linear -> LayerNorm -> GELU -> Dropout</text>
+
+  <rect class="solid" x="587" y="225" width="300" height="66"/>
+  <circle cx="628" cy="258" r="22" fill="#c8ddef" stroke="#333" stroke-width="2"/>
+  <circle cx="668" cy="258" r="22" fill="#f3cbd0" stroke="#333" stroke-width="2"/>
+  <circle cx="708" cy="258" r="22" fill="#d8efc3" stroke="#333" stroke-width="2"/>
+  <circle cx="748" cy="258" r="22" fill="#f7e1b7" stroke="#333" stroke-width="2"/>
+  <circle cx="788" cy="258" r="22" fill="#d8d2ef" stroke="#333" stroke-width="2"/>
+  <circle cx="828" cy="258" r="22" fill="#c7e7e0" stroke="#333" stroke-width="2"/>
+  <circle cx="868" cy="258" r="22" fill="#ecd5b7" stroke="#333" stroke-width="2"/>
+  <text class="small" x="617" y="330">7 encoded groups, each 128-D</text>
+
+  <rect class="soft-blue" x="575" y="370" width="320" height="88"/>
+  <text class="label" x="624" y="405">Gate network</text>
+  <text class="tiny" x="614" y="432">concat -> MLP -> softmax over 7 groups</text>
+
+  <rect class="solid" x="565" y="505" width="340" height="58"/>
+  <rect x="585" y="520" width="62" height="18" fill="#c8ddef" stroke="#333" stroke-width="1"/>
+  <rect x="655" y="520" width="38" height="18" fill="#f3cbd0" stroke="#333" stroke-width="1"/>
+  <rect x="701" y="520" width="44" height="18" fill="#d8efc3" stroke="#333" stroke-width="1"/>
+  <rect x="753" y="520" width="39" height="18" fill="#f7e1b7" stroke="#333" stroke-width="1"/>
+  <rect x="800" y="520" width="38" height="18" fill="#d8d2ef" stroke="#333" stroke-width="1"/>
+  <rect x="846" y="520" width="35" height="18" fill="#c7e7e0" stroke="#333" stroke-width="1"/>
+  <rect x="889" y="520" width="88" height="18" fill="#ecd5b7" stroke="#333" stroke-width="1"/>
+  <text class="tiny" x="600" y="553">mean gates: TAG 25.8%, BoW 18.2%</text>
+
+  <rect class="module" x="575" y="620" width="320" height="54"/>
+  <text class="mid" x="607" y="653">Weighted groups -> flatten 896-D</text>
+
+  <path class="red-arrow" d="M408 500 L550 145"/>
+  <path class="blue-arrow" d="M735 185 L735 221"/>
+  <path class="red-arrow" d="M735 330 L735 366"/>
+  <path class="red-arrow" d="M735 458 L735 501"/>
+  <path class="blue-arrow" d="M735 563 L735 616"/>
+
+  <!-- Residual MLP -->
+  <rect class="soft-blue" x="1040" y="105" width="360" height="82"/>
+  <text class="label" x="1084" y="140">Input projection</text>
+  <text class="tiny" x="1110" y="166">896 -> 512 hidden dim</text>
+
+  <rect class="module" x="1038" y="242" width="364" height="110"/>
+  <text class="label" x="1080" y="277">Residual MLP Block x4</text>
+  <text class="tiny" x="1067" y="306">LayerNorm -> Linear -> GELU -> Dropout</text>
+  <text class="tiny" x="1095" y="330">Linear -> Dropout + skip</text>
+
+  <rect class="solid" x="1058" y="400" width="324" height="84"/>
+  <text class="mid" x="1098" y="438">hidden = hidden + block(hidden)</text>
+  <path class="orange-arrow" d="M1090 462 C1080 510 1360 510 1348 462"/>
+
+  <rect class="soft-blue" x="1068" y="560" width="305" height="72"/>
+  <text class="label" x="1115" y="594">Classifier</text>
+  <text class="tiny" x="1115" y="618">LayerNorm -> Linear -> 81 logits</text>
+
+  <path class="blue-arrow" d="M895 647 L1035 145"/>
+  <path class="blue-arrow" d="M1220 187 L1220 238"/>
+  <path class="blue-arrow" d="M1220 352 L1220 396"/>
+  <path class="blue-arrow" d="M1220 484 L1220 556"/>
+
+  <!-- Co-occurrence + ASL -->
+  <rect class="solid" x="1515" y="100" width="170" height="138"/>
+  <line x1="1540" y1="128" x2="1662" y2="128" stroke="#333" stroke-width="2"/>
+  <line x1="1540" y1="158" x2="1662" y2="158" stroke="#333" stroke-width="2"/>
+  <line x1="1540" y1="188" x2="1662" y2="188" stroke="#333" stroke-width="2"/>
+  <line x1="1568" y1="116" x2="1568" y2="222" stroke="#333" stroke-width="2"/>
+  <line x1="1608" y1="116" x2="1608" y2="222" stroke="#333" stroke-width="2"/>
+  <line x1="1648" y1="116" x2="1648" y2="222" stroke="#333" stroke-width="2"/>
+  <circle cx="1568" cy="158" r="5" fill="#111"/>
+  <circle cx="1608" cy="128" r="5" fill="#111"/>
+  <circle cx="1648" cy="188" r="5" fill="#111"/>
+  <circle cx="1540" cy="218" r="5" fill="#111"/>
+  <text class="small" x="1500" y="267">Co-occurrence matrix M</text>
+  <text class="tiny" x="1496" y="292">81 x 81 | threshold 0.2 | nz 8.9%</text>
+
+  <rect class="soft-orange" x="1725" y="105" width="205" height="106"/>
+  <text class="mid" x="1757" y="140">Label refiner</text>
+  <text class="tiny" x="1752" y="166">z' = z + alpha(z @ M)</text>
+  <text class="tiny" x="1792" y="190">alpha = 0.2</text>
+
+  <rect class="module" x="1538" y="355" width="360" height="90"/>
+  <text class="label" x="1580" y="390">Asymmetric Loss (ASL)</text>
+  <text class="tiny" x="1580" y="418">gamma_neg = 4 | gamma_pos = 1 | clip = 0.05</text>
+
+  <rect class="soft-orange" x="1538" y="465" width="175" height="58"/>
+  <text class="mid" x="1572" y="494">Targets y</text>
+  <text class="tiny" x="1564" y="516">81 labels</text>
+
+  <rect class="soft-green" x="1558" y="555" width="320" height="76"/>
+  <text class="label" x="1600" y="590">Final prediction</text>
+  <text class="tiny" x="1600" y="615">test mAP 0.475 | Macro-F1 0.465</text>
+
+  <path class="blue-arrow" d="M1373 596 L1498 596 L1498 170 L1510 170"/>
+  <path class="orange-arrow" d="M1685 170 L1720 170"/>
+  <path class="orange-arrow" d="M1828 211 L1828 350"/>
+  <path class="red-arrow" d="M1626 465 L1626 450"/>
+  <path class="blue-arrow" d="M1800 445 L1800 550"/>
+
+  <!-- Bottom notes -->
+  <line class="dash-sep" x1="30" y1="760" x2="1970" y2="760"/>
+  <text class="note" x="56" y="798">Exp 23: gated fusion + residual MLP + ASL + co-occurrence</text>
+  <text class="note" x="650" y="798">Dims: [500, 64, 225, 144, 73, 128, 925]</text>
+  <text class="note" x="1085" y="798">Blocks: 4 | hidden: 512</text>
+  <text class="note" x="1375" y="798">Loss: AsymmetricLossWithLogits</text>
+</svg>

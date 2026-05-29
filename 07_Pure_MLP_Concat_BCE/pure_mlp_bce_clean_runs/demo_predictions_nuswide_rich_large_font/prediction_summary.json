@@ -1,0 +1,612 @@
+[
+  {
+    "image": "NUS-WIDE-images/images/0485_1264051699.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0485_1264051699_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "sky",
+        "probability": 0.9234382510185242
+      },
+      {
+        "label": "clouds",
+        "probability": 0.8590759634971619
+      },
+      {
+        "label": "water",
+        "probability": 0.7262725830078125
+      },
+      {
+        "label": "grass",
+        "probability": 0.5827465653419495
+      },
+      {
+        "label": "lake",
+        "probability": 0.4572569727897644
+      },
+      {
+        "label": "valley",
+        "probability": 0.38090676069259644
+      },
+      {
+        "label": "reflection",
+        "probability": 0.3683129847049713
+      },
+      {
+        "label": "mountain",
+        "probability": 0.27000778913497925
+      },
+      {
+        "label": "plants",
+        "probability": 0.2546599805355072
+      },
+      {
+        "label": "rocks",
+        "probability": 0.18647141754627228
+      },
+      {
+        "label": "garden",
+        "probability": 0.10007768124341965
+      },
+      {
+        "label": "ocean",
+        "probability": 0.07927089929580688
+      },
+      {
+        "label": "house",
+        "probability": 0.07246167212724686
+      },
+      {
+        "label": "road",
+        "probability": 0.06394907832145691
+      },
+      {
+        "label": "tree",
+        "probability": 0.037345875054597855
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "clouds",
+        "probability": 0.8590759634971619
+      },
+      {
+        "label": "grass",
+        "probability": 0.5827465653419495
+      },
+      {
+        "label": "sky",
+        "probability": 0.9234382510185242
+      },
+      {
+        "label": "water",
+        "probability": 0.7262725830078125
+      }
+    ],
+    "ground_truth": [
+      "clouds",
+      "grass",
+      "lake",
+      "mountain",
+      "rainbow",
+      "sky",
+      "valley",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 9141
+  },
+  {
+    "image": "NUS-WIDE-images/images/0412_1056314659.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0412_1056314659_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "sky",
+        "probability": 0.8957647681236267
+      },
+      {
+        "label": "clouds",
+        "probability": 0.7142350077629089
+      },
+      {
+        "label": "valley",
+        "probability": 0.6793803572654724
+      },
+      {
+        "label": "grass",
+        "probability": 0.580427348613739
+      },
+      {
+        "label": "mountain",
+        "probability": 0.5514699816703796
+      },
+      {
+        "label": "water",
+        "probability": 0.4809584617614746
+      },
+      {
+        "label": "lake",
+        "probability": 0.29120728373527527
+      },
+      {
+        "label": "plants",
+        "probability": 0.2616766691207886
+      },
+      {
+        "label": "rocks",
+        "probability": 0.2379719465970993
+      },
+      {
+        "label": "reflection",
+        "probability": 0.15360891819000244
+      },
+      {
+        "label": "garden",
+        "probability": 0.08005662262439728
+      },
+      {
+        "label": "house",
+        "probability": 0.054889317601919174
+      },
+      {
+        "label": "ocean",
+        "probability": 0.05142334848642349
+      },
+      {
+        "label": "road",
+        "probability": 0.04439797252416611
+      },
+      {
+        "label": "glacier",
+        "probability": 0.0415315181016922
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "clouds",
+        "probability": 0.7142350077629089
+      },
+      {
+        "label": "grass",
+        "probability": 0.580427348613739
+      },
+      {
+        "label": "mountain",
+        "probability": 0.5514699816703796
+      },
+      {
+        "label": "sky",
+        "probability": 0.8957647681236267
+      },
+      {
+        "label": "valley",
+        "probability": 0.6793803572654724
+      }
+    ],
+    "ground_truth": [
+      "clouds",
+      "mountain",
+      "rocks",
+      "sky",
+      "tree",
+      "valley",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 10516
+  },
+  {
+    "image": "NUS-WIDE-images/images/0564_2572863032.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0564_2572863032_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "water",
+        "probability": 0.9522375464439392
+      },
+      {
+        "label": "sky",
+        "probability": 0.7327987551689148
+      },
+      {
+        "label": "lake",
+        "probability": 0.7133089900016785
+      },
+      {
+        "label": "ocean",
+        "probability": 0.6244453191757202
+      },
+      {
+        "label": "rocks",
+        "probability": 0.5784923434257507
+      },
+      {
+        "label": "clouds",
+        "probability": 0.4330185651779175
+      },
+      {
+        "label": "valley",
+        "probability": 0.24997040629386902
+      },
+      {
+        "label": "mountain",
+        "probability": 0.204685240983963
+      },
+      {
+        "label": "beach",
+        "probability": 0.18967114388942719
+      },
+      {
+        "label": "reflection",
+        "probability": 0.0910550206899643
+      },
+      {
+        "label": "boats",
+        "probability": 0.0723729282617569
+      },
+      {
+        "label": "snow",
+        "probability": 0.05767829343676567
+      },
+      {
+        "label": "glacier",
+        "probability": 0.04290059953927994
+      },
+      {
+        "label": "person",
+        "probability": 0.030860794708132744
+      },
+      {
+        "label": "animal",
+        "probability": 0.0227678045630455
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "lake",
+        "probability": 0.7133089900016785
+      },
+      {
+        "label": "ocean",
+        "probability": 0.6244453191757202
+      },
+      {
+        "label": "rocks",
+        "probability": 0.5784923434257507
+      },
+      {
+        "label": "sky",
+        "probability": 0.7327987551689148
+      },
+      {
+        "label": "water",
+        "probability": 0.9522375464439392
+      }
+    ],
+    "ground_truth": [
+      "boats",
+      "clouds",
+      "glacier",
+      "lake",
+      "mountain",
+      "reflection",
+      "rocks",
+      "valley",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 30566
+  },
+  {
+    "image": "NUS-WIDE-images/images/0055_284393827.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0055_284393827_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "sky",
+        "probability": 0.9233278632164001
+      },
+      {
+        "label": "clouds",
+        "probability": 0.8946714997291565
+      },
+      {
+        "label": "water",
+        "probability": 0.8218958973884583
+      },
+      {
+        "label": "ocean",
+        "probability": 0.7138071060180664
+      },
+      {
+        "label": "sunset",
+        "probability": 0.6668843626976013
+      },
+      {
+        "label": "lake",
+        "probability": 0.5683885812759399
+      },
+      {
+        "label": "beach",
+        "probability": 0.4065965712070465
+      },
+      {
+        "label": "rocks",
+        "probability": 0.2784336805343628
+      },
+      {
+        "label": "sun",
+        "probability": 0.14753228425979614
+      },
+      {
+        "label": "reflection",
+        "probability": 0.10688159614801407
+      },
+      {
+        "label": "sand",
+        "probability": 0.07500540465116501
+      },
+      {
+        "label": "boats",
+        "probability": 0.036721497774124146
+      },
+      {
+        "label": "mountain",
+        "probability": 0.031436074525117874
+      },
+      {
+        "label": "person",
+        "probability": 0.026695476844906807
+      },
+      {
+        "label": "valley",
+        "probability": 0.017870241776108742
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "clouds",
+        "probability": 0.8946714997291565
+      },
+      {
+        "label": "lake",
+        "probability": 0.5683885812759399
+      },
+      {
+        "label": "ocean",
+        "probability": 0.7138071060180664
+      },
+      {
+        "label": "sky",
+        "probability": 0.9233278632164001
+      },
+      {
+        "label": "sunset",
+        "probability": 0.6668843626976013
+      },
+      {
+        "label": "water",
+        "probability": 0.8218958973884583
+      }
+    ],
+    "ground_truth": [
+      "beach",
+      "clouds",
+      "lake",
+      "ocean",
+      "sky",
+      "sunset",
+      "valley",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 100484
+  },
+  {
+    "image": "NUS-WIDE-images/images/0468_2420533075.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0468_2420533075_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "sky",
+        "probability": 0.9003263711929321
+      },
+      {
+        "label": "water",
+        "probability": 0.7804355025291443
+      },
+      {
+        "label": "rocks",
+        "probability": 0.7141830921173096
+      },
+      {
+        "label": "clouds",
+        "probability": 0.6905186176300049
+      },
+      {
+        "label": "lake",
+        "probability": 0.5144424438476562
+      },
+      {
+        "label": "valley",
+        "probability": 0.5053302049636841
+      },
+      {
+        "label": "mountain",
+        "probability": 0.40022560954093933
+      },
+      {
+        "label": "ocean",
+        "probability": 0.379831463098526
+      },
+      {
+        "label": "glacier",
+        "probability": 0.26299044489860535
+      },
+      {
+        "label": "snow",
+        "probability": 0.2363225221633911
+      },
+      {
+        "label": "reflection",
+        "probability": 0.23101338744163513
+      },
+      {
+        "label": "beach",
+        "probability": 0.19150765240192413
+      },
+      {
+        "label": "sunset",
+        "probability": 0.14304322004318237
+      },
+      {
+        "label": "grass",
+        "probability": 0.022166898474097252
+      },
+      {
+        "label": "road",
+        "probability": 0.020909063518047333
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "clouds",
+        "probability": 0.6905186176300049
+      },
+      {
+        "label": "lake",
+        "probability": 0.5144424438476562
+      },
+      {
+        "label": "rocks",
+        "probability": 0.7141830921173096
+      },
+      {
+        "label": "sky",
+        "probability": 0.9003263711929321
+      },
+      {
+        "label": "valley",
+        "probability": 0.5053302049636841
+      },
+      {
+        "label": "water",
+        "probability": 0.7804355025291443
+      }
+    ],
+    "ground_truth": [
+      "beach",
+      "clouds",
+      "glacier",
+      "lake",
+      "mountain",
+      "ocean",
+      "rocks",
+      "sky",
+      "snow",
+      "sunset",
+      "valley",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 77897
+  },
+  {
+    "image": "NUS-WIDE-images/images/0025_349232586.jpg",
+    "output": "07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font/0025_349232586_exp07_prediction.png",
+    "top_predictions": [
+      {
+        "label": "sky",
+        "probability": 0.9341882467269897
+      },
+      {
+        "label": "water",
+        "probability": 0.8670102953910828
+      },
+      {
+        "label": "clouds",
+        "probability": 0.8402774930000305
+      },
+      {
+        "label": "lake",
+        "probability": 0.5637763142585754
+      },
+      {
+        "label": "ocean",
+        "probability": 0.5172664523124695
+      },
+      {
+        "label": "sunset",
+        "probability": 0.502530574798584
+      },
+      {
+        "label": "rocks",
+        "probability": 0.30878159403800964
+      },
+      {
+        "label": "beach",
+        "probability": 0.17207321524620056
+      },
+      {
+        "label": "reflection",
+        "probability": 0.16490864753723145
+      },
+      {
+        "label": "boats",
+        "probability": 0.11264010518789291
+      },
+      {
+        "label": "snow",
+        "probability": 0.11091964691877365
+      },
+      {
+        "label": "sun",
+        "probability": 0.06339266896247864
+      },
+      {
+        "label": "mountain",
+        "probability": 0.04491483420133591
+      },
+      {
+        "label": "buildings",
+        "probability": 0.03697804734110832
+      },
+      {
+        "label": "valley",
+        "probability": 0.025564828887581825
+      }
+    ],
+    "threshold_predictions": [
+      {
+        "label": "clouds",
+        "probability": 0.8402774930000305
+      },
+      {
+        "label": "lake",
+        "probability": 0.5637763142585754
+      },
+      {
+        "label": "ocean",
+        "probability": 0.5172664523124695
+      },
+      {
+        "label": "sky",
+        "probability": 0.9341882467269897
+      },
+      {
+        "label": "sunset",
+        "probability": 0.502530574798584
+      },
+      {
+        "label": "water",
+        "probability": 0.8670102953910828
+      }
+    ],
+    "ground_truth": [
+      "clouds",
+      "lake",
+      "ocean",
+      "sky",
+      "snow",
+      "water"
+    ],
+    "font_scale": 1.45,
+    "database_index": 55280
+  }
+]

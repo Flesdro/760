@@ -1,0 +1,8 @@
+# Selected from NUS-WIDE-images/images for Experiment 23 demo.
+# These have many predictions above the default threshold=0.5.
+0485_1264051699.jpg
+0412_1056314659.jpg
+0564_2572863032.jpg
+0055_284393827.jpg
+0468_2420533075.jpg
+0025_349232586.jpg

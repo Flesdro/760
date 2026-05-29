@@ -32,104 +32,46 @@ FONT_BOLD_CANDIDATES = [
 
 @dataclass
 class ModelConfig:
-    group_embed_dim: int = 128
-    hidden_dim: int = 512
-    num_blocks: int = 4
+    hidden_dims: tuple[int, ...] = (512, 512, 512, 512)
     dropout: float = 0.3
+    activation: str = "gelu"
     threshold: float = 0.5
-    cooc_alpha: float = 0.2
 
 
-class ResidualMLPBlock(nn.Module):
-    def __init__(self, hidden_dim: int, dropout: float):
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Dropout(dropout),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.block(x)
-
-
-class LabelCorrelationRefiner(nn.Module):
-    def __init__(self, correlation_matrix: torch.Tensor | np.ndarray, alpha: float = 0.2):
-        super().__init__()
-        self.alpha = alpha
-        if isinstance(correlation_matrix, torch.Tensor):
-            matrix = correlation_matrix.detach().float()
-        else:
-            matrix = torch.tensor(correlation_matrix, dtype=torch.float32)
-        self.register_buffer("M", matrix)
-
-    def forward(self, logits: torch.Tensor) -> torch.Tensor:
-        return logits + self.alpha * torch.matmul(logits, self.M)
-
-
-class GatedFusionResidualMLP(nn.Module):
+class PureMLP(nn.Module):
     def __init__(
         self,
         group_dims: list[int],
         num_classes: int,
-        group_embed_dim: int = 128,
-        hidden_dim: int = 512,
-        num_blocks: int = 4,
-        dropout: float = 0.3,
-        refiner: nn.Module | None = None,
-        use_refiner: bool = True,
+        hidden_dims: tuple[int, ...],
+        dropout: float,
+        activation: str,
     ):
         super().__init__()
-        self.refiner = refiner
-        self.use_refiner = use_refiner
-        self.group_encoders = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(group_dim, group_embed_dim),
-                    nn.LayerNorm(group_embed_dim),
-                    nn.GELU(),
-                    nn.Dropout(dropout),
-                )
-                for group_dim in group_dims
-            ]
-        )
-        self.gate = nn.Sequential(
-            nn.Linear(group_embed_dim * len(group_dims), hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, len(group_dims)),
-        )
-        fused_dim = group_embed_dim * len(group_dims)
-        self.input_proj = nn.Sequential(
-            nn.Linear(fused_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-        )
-        self.blocks = nn.Sequential(
-            *[ResidualMLPBlock(hidden_dim=hidden_dim, dropout=dropout) for _ in range(num_blocks)]
-        )
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, num_classes),
-        )
+        layers: list[nn.Module] = []
+        prev_dim = sum(group_dims)
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(make_activation(activation))
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
+            prev_dim = hidden_dim
+        layers.append(nn.Linear(prev_dim, num_classes))
+        self.mlp = nn.Sequential(*layers)
 
-    def forward(self, feature_groups: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
-        encoded_groups = [encoder(features) for encoder, features in zip(self.group_encoders, feature_groups)]
-        stacked = torch.stack(encoded_groups, dim=1)
-        concat = torch.cat(encoded_groups, dim=1)
-        gate_weights = torch.softmax(self.gate(concat), dim=1)
-        gated = stacked * gate_weights.unsqueeze(-1)
-        fused = gated.flatten(start_dim=1)
-        hidden = self.input_proj(fused)
-        hidden = self.blocks(hidden)
-        logits = self.classifier(hidden)
-        if self.use_refiner and self.refiner is not None:
-            logits = self.refiner(logits)
-        return logits, gate_weights
+    def forward(self, feature_groups: list[torch.Tensor]) -> torch.Tensor:
+        return self.mlp(torch.cat(feature_groups, dim=1))
+
+
+def make_activation(name: str) -> nn.Module:
+    activations = {
+        "relu": nn.ReLU,
+        "gelu": nn.GELU,
+        "silu": nn.SiLU,
+    }
+    if name not in activations:
+        raise ValueError(f"Unsupported activation: {name}")
+    return activations[name]()
 
 
 def get_device() -> torch.device:
@@ -171,24 +113,19 @@ def model_config_from_checkpoint(checkpoint: dict[str, object]) -> ModelConfig:
     raw_config = checkpoint.get("config", {})
     if not isinstance(raw_config, dict):
         raw_config = {}
+    hidden_dims = raw_config.get("hidden_dims", (512, 512, 512, 512))
     return ModelConfig(
-        group_embed_dim=int(raw_config.get("group_embed_dim", 128)),
-        hidden_dim=int(raw_config.get("hidden_dim", 512)),
-        num_blocks=int(raw_config.get("num_blocks", 4)),
+        hidden_dims=tuple(int(dim) for dim in hidden_dims),
         dropout=float(raw_config.get("dropout", 0.3)),
+        activation=str(raw_config.get("activation", "gelu")),
         threshold=float(raw_config.get("threshold", 0.5)),
-        cooc_alpha=float(raw_config.get("cooc_alpha", 0.2)),
     )
 
 
-def load_model(checkpoint_path: Path, device: torch.device) -> tuple[GatedFusionResidualMLP, dict[str, object]]:
+def load_model(checkpoint_path: Path, device: torch.device) -> tuple[PureMLP, dict[str, object]]:
     checkpoint = load_checkpoint(checkpoint_path, device)
     if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
         raise ValueError(f"Unexpected checkpoint format: {checkpoint_path}")
-
-    state_dict = checkpoint["model_state_dict"]
-    if not isinstance(state_dict, dict):
-        raise ValueError(f"Checkpoint model_state_dict is not a dictionary: {checkpoint_path}")
 
     group_dims = checkpoint.get("group_dims")
     num_classes = checkpoint.get("num_classes")
@@ -196,22 +133,14 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple[GatedFusion
         raise ValueError("Checkpoint must contain group_dims and num_classes.")
 
     config = model_config_from_checkpoint(checkpoint)
-    has_refiner = "refiner.M" in state_dict
-    refiner = None
-    if has_refiner:
-        refiner = LabelCorrelationRefiner(torch.eye(num_classes), alpha=config.cooc_alpha)
-
-    model = GatedFusionResidualMLP(
+    model = PureMLP(
         group_dims=[int(dim) for dim in group_dims],
         num_classes=num_classes,
-        group_embed_dim=config.group_embed_dim,
-        hidden_dim=config.hidden_dim,
-        num_blocks=config.num_blocks,
+        hidden_dims=config.hidden_dims,
         dropout=config.dropout,
-        refiner=refiner,
-        use_refiner=has_refiner,
+        activation=config.activation,
     ).to(device)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model, checkpoint
 
@@ -221,26 +150,22 @@ def load_feature_row(path: Path, idx: int) -> np.ndarray:
     return np.asarray(array[idx], dtype=np.float32)
 
 
-def load_feature_groups(data_root: Path, aligned_tag_path: Path, local_idx: int) -> list[np.ndarray]:
-    groups = [load_feature_row(data_root / path, local_idx) for path in TRAIN_VISUAL_FEATURE_PATHS]
-    groups.append(load_feature_row(aligned_tag_path, local_idx))
-    return groups
+def load_feature_groups(data_root: Path, local_idx: int) -> list[np.ndarray]:
+    return [load_feature_row(data_root / path, local_idx) for path in TRAIN_VISUAL_FEATURE_PATHS]
 
 
 def predict(
-    model: GatedFusionResidualMLP,
+    model: PureMLP,
     device: torch.device,
     feature_groups: list[np.ndarray],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     tensors = [
         torch.tensor(group, dtype=torch.float32).unsqueeze(0).to(device)
         for group in feature_groups
     ]
     with torch.no_grad():
-        logits, gate_weights = model(tensors)
-        probs = torch.sigmoid(logits).cpu().numpy()[0]
-        gates = gate_weights.cpu().numpy()[0]
-    return probs, gates
+        logits = model(tensors)
+        return torch.sigmoid(logits).cpu().numpy()[0]
 
 
 def label_names_from_onehot(labels: np.ndarray, class_names: list[str]) -> list[str]:
@@ -258,22 +183,6 @@ def resize_to_fit(image: Image.Image, box_size: tuple[int, int]) -> Image.Image:
     except AttributeError:
         resampling = Image.LANCZOS
     return image.resize(new_size, resampling)
-
-
-def wrap_text(text: str, max_chars: int) -> list[str]:
-    words = text.split()
-    if not words:
-        return [""]
-    lines: list[str] = []
-    current = words[0]
-    for word in words[1:]:
-        if len(current) + 1 + len(word) <= max_chars:
-            current += " " + word
-        else:
-            lines.append(current)
-            current = word
-    lines.append(current)
-    return lines
 
 
 def text_width(text: str, font: ImageFont.ImageFont) -> int:
@@ -338,7 +247,7 @@ def draw_probability_figure(
     gt_font = load_ui_font(max(14, int(16 * font_scale)))
     gt_line_h = max(22, int(20 * font_scale))
 
-    draw.text((margin, 24), "Gated Fusion + ASL + No-overlap Tags", fill=(17, 24, 39), font=title_font)
+    draw.text((margin, 24), "Pure MLP + BCE Baseline", fill=(17, 24, 39), font=title_font)
     draw.text((margin, 58), image_path.name, fill=(75, 85, 99), font=font)
 
     image = resize_to_fit(Image.open(image_path), image_box)
@@ -358,8 +267,7 @@ def draw_probability_figure(
         y = chart_y + rank * row_step
         label = class_names[int(idx)]
         value = float(probs[int(idx)])
-        label_text = label[:24]
-        draw.text((chart_x, y + 6), label_text, fill=(31, 41, 55), font=font)
+        draw.text((chart_x, y + 6), label[:24], fill=(31, 41, 55), font=font)
 
         x0 = chart_x + label_w
         y0 = y
@@ -372,7 +280,11 @@ def draw_probability_figure(
         draw.text((x1 + 12, y + 6), f"{value:.3f}", fill=(31, 41, 55), font=font)
 
     threshold_x = chart_x + label_w + int(bar_w * max(0.0, min(1.0, threshold)))
-    draw.line((threshold_x, chart_y - 8, threshold_x, chart_y + len(top_indices) * (bar_h + gap) - gap + 8), fill=(220, 38, 38), width=2)
+    draw.line(
+        (threshold_x, chart_y - 8, threshold_x, chart_y + len(top_indices) * row_step - gap + 8),
+        fill=(220, 38, 38),
+        width=2,
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path)
@@ -382,7 +294,6 @@ def plot_prediction(
     image_path: Path,
     output_path: Path,
     probs: np.ndarray,
-    gates: np.ndarray,
     class_names: list[str],
     true_labels: list[str],
     threshold: float,
@@ -430,7 +341,6 @@ def plot_prediction(
             for idx in pred_indices
         ],
         "ground_truth": true_labels,
-        "gate_weights": [float(value) for value in gates],
         "font_scale": float(font_scale),
     }
 
@@ -462,58 +372,32 @@ def resolve_selected_images(images_dir: Path, selected_images_path: Path) -> lis
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run image prediction figures for experiment 23."
-    )
+    parser = argparse.ArgumentParser(description="Run image prediction figures for experiment 07 baseline.")
     parser.add_argument("--data-root", type=Path, default=Path("dataset"))
     parser.add_argument("--meta-root", type=Path, default=Path("."))
-    parser.add_argument("--images-dir", type=Path, default=Path("images_example"))
+    parser.add_argument("--images-dir", type=Path, default=Path("NUS-WIDE-images/images"))
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=Path(
-            "23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/"
-            "gated_fusion_residual_mlp_focal_tag_no_overlap_best.pt"
-        ),
-    )
-    parser.add_argument(
-        "--aligned-tag-path",
-        type=Path,
-        default=Path(
-            "23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/cache/"
-            "aligned_tag_feature_no_overlap.npy"
-        ),
-    )
-    parser.add_argument(
-        "--matched-indices-path",
-        type=Path,
-        default=Path(
-            "23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/cache/"
-            "matched_indices_no_overlap.npy"
-        ),
+        default=Path("07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/pure_mlp_bce_visual_clean_best.pt"),
     )
     parser.add_argument("--class-names", type=Path, default=Path("Concepts81.txt"))
     parser.add_argument("--label-onehot", type=Path, default=Path("dataset/database_labels_81_big.npy"))
     parser.add_argument("--image-list", type=Path, default=Path("database_img.txt"))
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("23_train_gated_fusion_residual_mlp_focal_tag_no_overlap/runs/demo_predictions"),
-    )
-    parser.add_argument(
         "--selected-images",
         type=Path,
-        default=None,
+        default=Path("07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_selected_images.txt"),
         help="Optional text file of image filenames/paths to process from --images-dir.",
     )
-    parser.add_argument("--threshold", type=float, default=None)
-    parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument(
-        "--font-scale",
-        type=float,
-        default=1.0,
-        help="Scale factor for text in generated prediction figures, e.g. 1.4 for slides.",
+        "--output-dir",
+        type=Path,
+        default=Path("07_Pure_MLP_Concat_BCE/pure_mlp_bce_clean_runs/demo_predictions_nuswide_rich_large_font"),
     )
+    parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument("--top-k", type=int, default=15)
+    parser.add_argument("--font-scale", type=float, default=1.45)
     args = parser.parse_args()
 
     device = get_device()
@@ -529,13 +413,7 @@ def main() -> None:
         raise ValueError(f"--class-names must contain {checkpoint['num_classes']} lines, got {len(class_names)}")
 
     labels = np.load(args.label_onehot, mmap_mode="r")
-    matched_indices = np.load(args.matched_indices_path)
-    matched_set = set(int(idx) for idx in matched_indices.tolist())
-
-    if args.selected_images is None:
-        images = iter_images(args.images_dir)
-    else:
-        images = resolve_selected_images(args.images_dir, args.selected_images)
+    images = resolve_selected_images(args.images_dir, args.selected_images) if args.selected_images else iter_images(args.images_dir)
     if not images:
         raise ValueError(f"No image files found in {args.images_dir}")
 
@@ -547,22 +425,17 @@ def main() -> None:
         if local_idx is None:
             print("Skipping: filename was not found in database_img.txt")
             continue
-        if local_idx not in matched_set:
-            print(f"Skipping: database index {local_idx} is not in the clean matched subset")
-            continue
 
-        feature_groups = load_feature_groups(args.data_root, args.aligned_tag_path, local_idx)
-        probs, gates = predict(model, device, feature_groups)
+        feature_groups = load_feature_groups(args.data_root, local_idx)
+        probs = predict(model, device, feature_groups)
         true_labels = label_names_from_onehot(np.asarray(labels[local_idx], dtype=np.float32), class_names)
-        output_path = args.output_dir / f"{image_path.stem}_exp23_prediction.png"
+        output_path = args.output_dir / f"{image_path.stem}_exp07_prediction.png"
 
         print(f"Database index: {local_idx}")
-        print(f"Gate weights: {[round(float(value), 4) for value in gates]}")
         summary = plot_prediction(
             image_path=image_path,
             output_path=output_path,
             probs=probs,
-            gates=gates,
             class_names=class_names,
             true_labels=true_labels,
             threshold=threshold,
